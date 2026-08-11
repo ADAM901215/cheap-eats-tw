@@ -1,170 +1,369 @@
--- ============================================================
--- 窮鬼地圖・200有找  Supabase 資料庫初始化腳本
--- ============================================================
--- 使用方式：
--- 1. 打開你的 Supabase 專案 → 左側選單「SQL Editor」
--- 2. 點「New query」
--- 3. 把這整份檔案的內容貼進去
--- 4. 按右下角「Run」執行
--- 這份腳本可以重複執行不會出錯（用了 IF NOT EXISTS / OR REPLACE）
--- ============================================================
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>窮鬼地圖・200有找</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.css" />
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.Default.css" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@700;900&family=Noto+Sans+TC:wght@400;500;700&family=Zhi+Mang+Xing&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<style>
+  :root{
+    --ink:#22201B;
+    --rice:#F6EFDD;
+    --rice-dim:#ECE1C6;
+    --lantern:#C8342D;
+    --lantern-dark:#9E2823;
+    --turmeric:#E7A93E;
+    --jade:#3F7A5E;
+    --charcoal:#4A443B;
+    --shadow: 0 6px 18px rgba(34,32,27,0.18);
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--rice-dim);
+    color:var(--ink);
+    font-family:'Noto Sans TC', sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  h1,h2,h3{font-family:'Noto Serif TC', serif; margin:0;}
+  button{font-family:inherit; cursor:pointer;}
+  input,select{font-family:inherit;}
+  :focus-visible{outline:3px solid var(--turmeric); outline-offset:2px;}
 
--- 需要 uuid 產生函式
-create extension if not exists "pgcrypto";
+  /* ---------- Header ---------- */
+  .app-header{
+    position:sticky; top:0; z-index:40;
+    background:var(--ink);
+    color:var(--rice);
+    padding:14px 16px 12px;
+  }
+  .brand-row{display:flex; align-items:baseline; gap:10px; flex-wrap:wrap;}
+  .brand-title{font-size:22px; font-weight:900; letter-spacing:0.5px;}
+  .brand-badge{
+    font-family:'Zhi Mang Xing', cursive;
+    font-size:19px;
+    color:var(--turmeric);
+    border:2px solid var(--turmeric);
+    border-radius:4px;
+    padding:0px 8px 2px;
+    transform:rotate(-4deg);
+    display:inline-block;
+  }
+  .brand-sub{font-size:12.5px; color:#CFC7B0; margin-top:2px;}
+  .search-row{display:flex; gap:8px; margin-top:12px;}
+  .search-input{
+    flex:1; padding:10px 12px; border-radius:10px; border:none;
+    background:var(--rice); color:var(--ink); font-size:14.5px;
+  }
+  .search-input::placeholder{color:#8b8371;}
+  .locate-icon-btn{
+    background:var(--turmeric); border:none; border-radius:10px;
+    width:42px; height:42px; font-size:18px; color:var(--ink); flex-shrink:0;
+  }
 
--- ------------------------------------------------------------
--- 資料表：restaurants（品項回報，一列＝一間店的一道菜／一個套餐）
--- ------------------------------------------------------------
-create table if not exists public.restaurants (
-  id uuid primary key default gen_random_uuid(),
-  store_name text not null,
-  dish_name text not null,
-  category text not null check (category in ('早餐','正餐','小吃','飲料','宵夜')),
-  price int not null check (price >= 1 and price <= 200),
-  rating numeric not null check (rating >= 1 and rating <= 5),
-  comment text,
-  lat double precision not null,
-  lng double precision not null,
-  nickname text,
-  reporter_id uuid not null,
-  photo_url text,
-  likes int not null default 0,
-  confirm_count int not null default 0,
-  last_confirmed_at timestamptz,
-  status text not null default 'approved' check (status in ('approved','pending','rejected')),
-  is_verified boolean not null default false,
-  created_at timestamptz not null default now()
-);
+  /* ---------- Filter chips ---------- */
+  .filter-bar{
+    position:sticky; top:88px; z-index:35;
+    background:var(--rice-dim);
+    padding:10px 16px 8px;
+    border-bottom:1px dashed #cfc4a0;
+  }
+  .chip-row{display:flex; gap:8px; overflow-x:auto; padding-bottom:4px; scrollbar-width:none;}
+  .chip-row::-webkit-scrollbar{display:none;}
+  .chip{
+    flex-shrink:0; padding:7px 13px; border-radius:20px; border:1.5px solid var(--charcoal);
+    background:var(--rice); font-size:13.5px; font-weight:500; color:var(--charcoal);
+    white-space:nowrap;
+  }
+  .chip.active{background:var(--lantern); border-color:var(--lantern); color:var(--rice);}
+  .sort-row{display:flex; align-items:center; gap:8px; margin-top:8px; font-size:13px;}
+  .sort-row select{
+    padding:6px 8px; border-radius:8px; border:1.5px solid var(--charcoal); background:var(--rice);
+  }
+  .price-note{margin-left:auto; font-family:'JetBrains Mono', monospace; font-size:12px; color:var(--lantern-dark); font-weight:700;}
 
--- ------------------------------------------------------------
--- 資料表：likes（防止重複按讚）
--- ------------------------------------------------------------
-create table if not exists public.likes (
-  id uuid primary key default gen_random_uuid(),
-  restaurant_id uuid not null references public.restaurants(id) on delete cascade,
-  reporter_id uuid not null,
-  created_at timestamptz not null default now(),
-  unique (restaurant_id, reporter_id)
-);
+  /* ---------- Map ---------- */
+  #map{ height:44vh; min-height:280px; width:100%; background:#e5e1d3; position:relative; z-index:1; }
+  .leaflet-popup-content-wrapper{ border-radius:10px; font-family:'Noto Sans TC', sans-serif; }
+  .price-pill{
+    display:flex; align-items:center; justify-content:center;
+    height:26px; padding:0 10px; border-radius:13px;
+    background:#fff; font-family:'JetBrains Mono', monospace; font-weight:700; font-size:12.5px;
+    box-shadow:var(--shadow); border:2.5px solid;
+    white-space:nowrap;
+  }
+  .my-location-dot{
+    width:18px; height:18px; border-radius:50%;
+    background:#4285F4; border:3px solid #fff; box-shadow:0 0 0 1px rgba(0,0,0,0.25), 0 2px 5px rgba(0,0,0,0.3);
+  }
+  .cluster-badge{
+    display:flex; align-items:center; justify-content:center;
+    width:100%; height:100%; border-radius:50%;
+    background:var(--ink); color:var(--rice); font-family:'JetBrains Mono', monospace; font-weight:700;
+    box-shadow:var(--shadow); border:2.5px solid var(--rice);
+  }
 
--- ------------------------------------------------------------
--- 資料表：confirmations（「這個價格我最近也吃過，還準」）
--- ------------------------------------------------------------
-create table if not exists public.confirmations (
-  id uuid primary key default gen_random_uuid(),
-  restaurant_id uuid not null references public.restaurants(id) on delete cascade,
-  reporter_id uuid not null,
-  created_at timestamptz not null default now(),
-  unique (restaurant_id, reporter_id)
-);
+  /* ---------- List ---------- */
+  .list-wrap{ padding:16px; max-width:640px; margin:0 auto; }
+  .list-heading{
+    display:flex; align-items:baseline; justify-content:space-between; margin-bottom:12px;
+  }
+  .list-heading h2{font-size:17px;}
+  .list-count{font-family:'JetBrains Mono', monospace; font-size:13px; color:var(--charcoal);}
 
--- ------------------------------------------------------------
--- 資料表：reports_flag（檢舉錯誤資訊）
--- ------------------------------------------------------------
-create table if not exists public.reports_flag (
-  id uuid primary key default gen_random_uuid(),
-  restaurant_id uuid not null references public.restaurants(id) on delete cascade,
-  reason text,
-  created_at timestamptz not null default now()
-);
+  .ticket-card{
+    background:var(--rice); border-radius:12px 12px 0 0;
+    box-shadow:var(--shadow); margin-bottom:22px;
+    padding:14px 16px 20px;
+    position:relative;
+    clip-path: polygon(0% 0%,100% 0%,100% 90%,95% 100%,90% 90%,85% 100%,80% 90%,75% 100%,70% 90%,65% 100%,60% 90%,55% 100%,50% 90%,45% 100%,40% 90%,35% 100%,30% 90%,25% 100%,20% 90%,15% 100%,10% 90%,5% 100%,0% 90%);
+    animation: rise .35s ease both;
+  }
+  @keyframes rise{ from{opacity:0; transform:translateY(10px);} to{opacity:1; transform:translateY(0);} }
+  .ticket-head{display:flex; align-items:flex-start; gap:8px;}
+  .cat-emoji{font-size:20px; line-height:1;}
+  .ticket-name-wrap{flex:1; min-width:0;}
+  .ticket-dish{font-size:16.5px; font-weight:700; line-height:1.3;}
+  .ticket-store{font-size:12.5px; color:var(--charcoal); margin-top:2px;}
+  .tier-tag{
+    font-size:11px; font-weight:700; padding:3px 8px; border-radius:5px; color:#fff; flex-shrink:0;
+    white-space:nowrap;
+  }
+  .verified-badge{
+    font-size:10.5px; font-weight:700; padding:2px 7px; border-radius:5px;
+    background:var(--jade); color:#fff; white-space:nowrap; margin-left:4px;
+  }
+  .ticket-comment{font-size:13px; color:var(--charcoal); margin:6px 0 8px; line-height:1.5;}
+  .ticket-meta{display:flex; align-items:center; gap:10px; font-size:13px;}
+  .stars{color:var(--turmeric); letter-spacing:1px;}
+  .like-btn{
+    margin-left:auto; border:1.5px solid var(--jade); background:transparent; color:var(--jade);
+    border-radius:16px; padding:4px 10px; font-size:12.5px; font-weight:700;
+  }
+  .like-btn.liked{background:var(--jade); color:#fff;}
+  .photo-thumb{
+    margin-top:10px; border-radius:8px; max-width:100%; max-height:160px; display:block;
+    border:1.5px solid #d8cca8;
+  }
+  .perf-line{
+    border-top:2px dashed #cbbf9f; margin:12px 0 10px;
+  }
+  .ticket-bottom{display:flex; align-items:center; gap:10px;}
+  .price-label{font-size:11.5px; color:#8b8371;}
+  .price-value{font-family:'JetBrains Mono', monospace; font-weight:700; font-size:21px; color:var(--lantern-dark);}
+  .ticket-buttons{ margin-left:auto; display:flex; align-items:center; gap:8px; }
+  .locate-btn{
+    background:var(--ink); color:var(--rice); border:none; border-radius:8px;
+    padding:7px 11px; font-size:12.5px; font-weight:500;
+  }
+  .delete-btn{
+    background:transparent; color:var(--lantern-dark); border:1.5px solid var(--lantern-dark);
+    border-radius:8px; padding:7px 11px; font-size:12.5px; font-weight:500;
+  }
+  .delete-btn:active{ background:var(--lantern-dark); color:#fff; }
+  .nickname-tag{font-size:14px; color:#a89d80; margin-top:8px; font-family:'Zhi Mang Xing', cursive;}
 
--- ------------------------------------------------------------
--- Trigger：confirmations 新增一筆 → 自動更新 restaurants 的
--- confirm_count 與 last_confirmed_at（不交給前端手動算）
--- ------------------------------------------------------------
-create or replace function public.handle_new_confirmation()
-returns trigger as $$
-begin
-  update public.restaurants
-  set confirm_count = confirm_count + 1,
-      last_confirmed_at = now()
-  where id = new.restaurant_id;
-  return new;
-end;
-$$ language plpgsql security definer;
+  .empty-state{
+    text-align:center; padding:40px 20px; color:var(--charcoal);
+  }
+  .empty-state .stamp{font-size:40px; display:block; margin-bottom:10px;}
 
-drop trigger if exists on_confirmation_created on public.confirmations;
-create trigger on_confirmation_created
-  after insert on public.confirmations
-  for each row execute function public.handle_new_confirmation();
+  /* ---------- FAB ---------- */
+  .fab{
+    position:fixed; right:18px; bottom:22px; z-index:50;
+    width:58px; height:58px; border-radius:50%; border:none;
+    background:var(--lantern); color:#fff; font-size:28px; box-shadow:var(--shadow);
+    display:flex; align-items:center; justify-content:center;
+  }
+  .fab:active{transform:scale(0.94);}
 
--- ------------------------------------------------------------
--- Row Level Security
--- ------------------------------------------------------------
-alter table public.restaurants enable row level security;
-alter table public.likes enable row level security;
-alter table public.confirmations enable row level security;
-alter table public.reports_flag enable row level security;
+  /* ---------- Modal ---------- */
+  .overlay{
+    position:fixed; inset:0; background:rgba(34,32,27,0.55); z-index:60;
+    display:flex; align-items:flex-end; justify-content:center;
+  }
+  .hidden{display:none !important;}
+  .sheet{
+    background:var(--rice); width:100%; max-width:520px; border-radius:18px 18px 0 0;
+    max-height:88vh; overflow-y:auto; padding:20px 20px 26px;
+    animation: sheetUp .28s ease both;
+  }
+  @keyframes sheetUp{ from{transform:translateY(24px); opacity:0;} to{transform:translateY(0); opacity:1;} }
+  .sheet-title{font-size:18px; font-weight:900; margin-bottom:2px;}
+  .sheet-sub{font-size:12.5px; color:var(--charcoal); margin-bottom:16px;}
+  .field{margin-bottom:14px;}
+  .field label{display:block; font-size:13px; font-weight:700; margin-bottom:5px;}
+  .field input, .field textarea, .field select{
+    width:100%; padding:10px 11px; border-radius:9px; border:1.5px solid #d8cca8; background:#fff;
+    font-size:14px;
+  }
+  .field textarea{resize:none; height:56px;}
+  .hint{font-size:11.5px; color:#a89d80; margin-top:4px;}
+  .hint.err{color:var(--lantern); font-weight:700;}
+  .star-picker{display:flex; gap:6px; font-size:26px;}
+  .star-picker span{cursor:pointer; color:#d8cca8;}
+  .star-picker span.on{color:var(--turmeric);}
+  #pickMap{ height:180px; border-radius:10px; margin-top:6px; border:1.5px solid #d8cca8; background:#e5e1d3; position:relative; z-index:1; }
+  .address-results{
+    margin-top:6px; border:1.5px solid #d8cca8; border-radius:9px; overflow:hidden; background:#fff;
+    max-height:220px; overflow-y:auto;
+  }
+  .addr-result-item{ padding:10px 12px; font-size:13px; border-bottom:1px solid #ece1c6; cursor:pointer; }
+  .addr-result-item:last-child{ border-bottom:none; }
+  .addr-result-item:hover, .addr-result-item:active{ background:var(--rice-dim); }
+  .addr-result-empty{ padding:10px 12px; font-size:13px; color:var(--charcoal); }
+  .sheet-actions{display:flex; gap:10px; margin-top:18px;}
+  .btn-secondary, .btn-primary{
+    flex:1; padding:12px; border-radius:10px; border:none; font-size:14.5px; font-weight:700;
+  }
+  .btn-secondary{background:var(--rice-dim); color:var(--charcoal); border:1.5px solid #d8cca8;}
+  .btn-primary{background:var(--ink); color:var(--rice);}
+  .btn-primary:disabled{opacity:0.6;}
+  .btn-primary:active{transform:scale(0.98);}
 
--- restaurants：所有人可讀
-drop policy if exists "restaurants_select_all" on public.restaurants;
-create policy "restaurants_select_all"
-  on public.restaurants for select
-  using (true);
+  .toast{
+    position:fixed; left:50%; bottom:96px; transform:translateX(-50%);
+    background:var(--jade); color:#fff; padding:10px 18px; border-radius:20px; font-size:13.5px;
+    font-weight:700; z-index:80; box-shadow:var(--shadow);
+    animation: stampIn .35s ease both;
+    max-width:88vw; text-align:center;
+  }
+  .toast.error{ background:var(--lantern); }
+  @keyframes stampIn{ 0%{opacity:0; transform:translateX(-50%) scale(1.5) rotate(-8deg);} 60%{opacity:1; transform:translateX(-50%) scale(0.95) rotate(2deg);} 100%{opacity:1; transform:translateX(-50%) scale(1) rotate(0);} }
 
--- restaurants：已登入（含匿名登入）使用者可新增，且限定寫入自己的 reporter_id，價格再檢查一次
-drop policy if exists "restaurants_insert_authenticated" on public.restaurants;
-create policy "restaurants_insert_authenticated"
-  on public.restaurants for insert
-  to authenticated
-  with check (
-    auth.uid() = reporter_id
-    and price > 0 and price <= 200
-  );
+  .loading{ text-align:center; padding:40px; color:var(--charcoal); font-size:13.5px; }
 
--- 一般使用者不可 UPDATE／DELETE restaurants（階段一、二先不開放）
+  @media (prefers-reduced-motion: reduce){
+    *{animation:none !important; transition:none !important;}
+  }
+</style>
+</head>
+<body>
 
--- likes：所有人可讀
-drop policy if exists "likes_select_all" on public.likes;
-create policy "likes_select_all"
-  on public.likes for select
-  using (true);
+<header class="app-header">
+  <div class="brand-row">
+    <h1 class="brand-title">窮鬼地圖</h1>
+    <span class="brand-badge">200有找</span>
+  </div>
+  <div class="brand-sub">全民揪團回報的高CP值品項・一餐不超過 200 元</div>
+  <div class="search-row">
+    <input id="searchInput" class="search-input" type="text" placeholder="搜尋店名、品項關鍵字…" />
+    <button id="locateBtn" class="locate-icon-btn" aria-label="定位我的位置">📍</button>
+  </div>
+</header>
 
--- likes：已登入使用者可新增自己的讚
-drop policy if exists "likes_insert_own" on public.likes;
-create policy "likes_insert_own"
-  on public.likes for insert
-  to authenticated
-  with check (auth.uid() = reporter_id);
+<div class="filter-bar">
+  <div class="chip-row" id="chipRow"></div>
+  <div class="sort-row">
+    <label for="sortSelect" style="color:var(--charcoal);">排序</label>
+    <select id="sortSelect">
+      <option value="rating">評分最高</option>
+      <option value="priceAsc">價格最低</option>
+      <option value="likes">最多人推</option>
+      <option value="newest">最新回報</option>
+    </select>
+    <span class="price-note">全站上限 $200</span>
+  </div>
+</div>
 
--- confirmations：所有人可讀（前端要算 N 人確認需要讀取）
-drop policy if exists "confirmations_select_all" on public.confirmations;
-create policy "confirmations_select_all"
-  on public.confirmations for select
-  using (true);
+<div id="map"></div>
 
--- confirmations：已登入使用者可新增自己的確認
-drop policy if exists "confirmations_insert_own" on public.confirmations;
-create policy "confirmations_insert_own"
-  on public.confirmations for insert
-  to authenticated
-  with check (auth.uid() = reporter_id);
+<div class="list-wrap">
+  <div class="list-heading">
+    <h2>品項清單</h2>
+    <span class="list-count" id="listCount">0 筆</span>
+  </div>
+  <div id="listContainer"><div class="loading">正在讀取大家回報的口袋名單…</div></div>
+</div>
 
--- reports_flag：已登入使用者可新增檢舉，先不開放讀取（僅後台看，之後再處理）
-drop policy if exists "reports_flag_insert_authenticated" on public.reports_flag;
-create policy "reports_flag_insert_authenticated"
-  on public.reports_flag for insert
-  to authenticated
-  with check (true);
+<button class="fab" id="openAddBtn" aria-label="新增品項">＋</button>
 
--- ------------------------------------------------------------
--- Storage：建立 photos bucket（存回報者上傳的菜單／收據照片）
--- ------------------------------------------------------------
-insert into storage.buckets (id, name, public)
-values ('photos', 'photos', true)
-on conflict (id) do nothing;
+<div class="overlay hidden" id="overlay">
+  <div class="sheet">
+    <div class="sheet-title">回報一道 200 有找的品項</div>
+    <div class="sheet-sub">請填「哪間店的哪道菜／哪個套餐」，大家會看到你回報的資料，請盡量填寫真實資訊唷。</div>
 
-drop policy if exists "photos_public_read" on storage.objects;
-create policy "photos_public_read"
-  on storage.objects for select
-  using (bucket_id = 'photos');
+    <div class="field">
+      <label for="fStore">店名</label>
+      <input id="fStore" type="text" placeholder="例如：巷口無名滷肉飯" maxlength="30" />
+    </div>
 
-drop policy if exists "photos_authenticated_upload" on storage.objects;
-create policy "photos_authenticated_upload"
-  on storage.objects for insert
-  to authenticated
-  with check (bucket_id = 'photos');
+    <div class="field">
+      <label for="fDish">招牌品項名稱</label>
+      <input id="fDish" type="text" placeholder="例如：乾麵套餐" maxlength="30" />
+      <div class="hint">價格是指「這個品項」，不是整間店的均價</div>
+    </div>
 
--- ============================================================
--- 完成！可以到左側「Table Editor」確認四張表都建立好了。
--- ============================================================
+    <div class="field">
+      <label for="fCategory">分類</label>
+      <select id="fCategory">
+        <option value="早餐">🥯 早餐</option>
+        <option value="正餐">🍚 正餐</option>
+        <option value="小吃">🍢 小吃</option>
+        <option value="飲料">🥤 飲料</option>
+        <option value="宵夜">🌙 宵夜</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label for="fPrice">這個品項的價格（新台幣）</label>
+      <input id="fPrice" type="number" min="1" max="200" placeholder="150" />
+      <div class="hint" id="priceHint">超過 200 就不是「俗擱大碗」囉，上限 200 元</div>
+    </div>
+
+    <div class="field">
+      <label>評分</label>
+      <div class="star-picker" id="starPicker">
+        <span data-v="1">★</span><span data-v="2">★</span><span data-v="3">★</span><span data-v="4">★</span><span data-v="5">★</span>
+      </div>
+    </div>
+
+    <div class="field">
+      <label for="fComment">一句話推薦</label>
+      <textarea id="fComment" maxlength="60" placeholder="例如：便宜大碗，湯頭很夠味！"></textarea>
+    </div>
+
+    <div class="field">
+      <label for="fPhoto">上傳菜單／收據照片（選填）</label>
+      <input id="fPhoto" type="file" accept="image/*" />
+      <div class="hint">作為佐證，未來也會用來審核店家認證</div>
+    </div>
+
+    <div class="field">
+      <label for="fAddressSearch">搜尋店名／地址自動定位（選填）</label>
+      <div style="display:flex; gap:8px;">
+        <input id="fAddressSearch" type="text" placeholder="輸入地址、路名或店名關鍵字" />
+        <button type="button" id="searchAddressBtn" class="btn-secondary" style="flex:0 0 auto; padding:0 16px;">搜尋</button>
+      </div>
+      <div id="addressResults" class="hidden address-results"></div>
+    </div>
+
+    <div class="field">
+      <label>店家位置（點地圖放置圖釘）</label>
+      <div id="pickMap"></div>
+      <div class="hint">搜尋後點選正確地點，圖釘會自動移過去；也可以直接在地圖上點擊微調位置</div>
+    </div>
+
+    <div class="field">
+      <label for="fNick">你的暱稱（選填）</label>
+      <input id="fNick" type="text" placeholder="省錢戰士" maxlength="12" />
+    </div>
+
+    <div class="sheet-actions">
+      <button class="btn-secondary" id="cancelAddBtn">取消</button>
+      <button class="btn-primary" id="submitAddBtn">蓋章送出</button>
+    </div>
+  </div>
+</div>
+
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
