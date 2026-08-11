@@ -70,6 +70,7 @@
       lat: r.lat,
       lng: r.lng,
       nickname: r.nickname,
+      reporterId: r.reporter_id,
       photoUrl: r.photo_url,
       likes: r.likes || 0,
       confirmCount: r.confirm_count || 0,
@@ -181,7 +182,10 @@
             <div class="price-label">品項價格</div>
             <div class="price-value">$${r.price}</div>
           </div>
-          <button class="locate-btn" data-locate="${r.id}">📍 在地圖上看</button>
+          <div class="ticket-buttons">
+            ${r.reporterId===currentUserId ? `<button class="delete-btn" data-delete="${r.id}">🗑️ 刪除</button>` : ''}
+            <button class="locate-btn" data-locate="${r.id}">📍 在地圖上看</button>
+          </div>
         </div>
       </div>`;
     }).join('');
@@ -192,6 +196,24 @@
     container.querySelectorAll('[data-locate]').forEach(btn=>{
       btn.onclick = ()=>locateOnMap(btn.getAttribute('data-locate'));
     });
+    container.querySelectorAll('[data-delete]').forEach(btn=>{
+      btn.onclick = ()=>deleteRestaurant(btn.getAttribute('data-delete'));
+    });
+  }
+
+  async function deleteRestaurant(id){
+    const r = restaurants.find(x=>x.id===id);
+    if(!r) return;
+    const ok = window.confirm(`確定要刪除「${r.dishName}」這筆回報嗎？刪除後無法復原。`);
+    if(!ok) return;
+    const { error } = await sb.from('restaurants').delete().eq('id', id);
+    if(error){
+      console.error('刪除失敗', error);
+      showToast('刪除失敗：' + (error.message || '請稍後再試'), true);
+      return;
+    }
+    showToast('已刪除這筆回報');
+    await loadData();
   }
 
   // 階段一：讚功能先做前端視覺互動，尚未寫入 likes 資料表（見需求書階段二）
@@ -245,6 +267,9 @@
     document.getElementById('fNick').value='';
     document.getElementById('fPhoto').value='';
     chosenPhotoFile = null;
+    document.getElementById('fAddressSearch').value='';
+    document.getElementById('addressResults').classList.add('hidden');
+    document.getElementById('addressResults').innerHTML='';
     document.getElementById('priceHint').textContent = '超過 200 就不是「俗擱大碗」囉，上限 200 元';
     document.getElementById('priceHint').classList.remove('err');
     chosenRating = 0;
@@ -265,6 +290,56 @@
   }
 
   function closeModal(){ overlay.classList.add('hidden'); }
+
+  // ---------- 地址／店名搜尋自動定位（使用 OpenStreetMap 的免費 Nominatim 服務）----------
+  let addressSearchBusy = false;
+  async function searchAddress(){
+    const input = document.getElementById('fAddressSearch');
+    const resultsBox = document.getElementById('addressResults');
+    const q = input.value.trim();
+    if(!q){ resultsBox.classList.add('hidden'); resultsBox.innerHTML=''; return; }
+    if(addressSearchBusy) return;
+    addressSearchBusy = true;
+    resultsBox.classList.remove('hidden');
+    resultsBox.innerHTML = '<div class="addr-result-empty">搜尋中…</div>';
+    try{
+      const center = pickMap ? pickMap.getCenter() : map.getCenter();
+      const viewbox = [
+        (center.lng-0.15).toFixed(5), (center.lat+0.15).toFixed(5),
+        (center.lng+0.15).toFixed(5), (center.lat-0.15).toFixed(5)
+      ].join(',');
+      const url = `https://nominatim.openstreetmap.org/search?format=json&limit=5&countrycodes=tw&viewbox=${viewbox}&q=${encodeURIComponent(q)}`;
+      const res = await fetch(url, { headers: { 'Accept-Language': 'zh-TW' } });
+      const data = await res.json();
+      if(!data || data.length===0){
+        resultsBox.innerHTML = '<div class="addr-result-empty">找不到符合的地點，換個關鍵字試試，或直接在地圖上點選位置</div>';
+        return;
+      }
+      resultsBox.innerHTML = data.map((r,i)=>`<div class="addr-result-item" data-i="${i}">${escapeHtml(r.display_name)}</div>`).join('');
+      resultsBox.querySelectorAll('.addr-result-item').forEach(el=>{
+        el.onclick = ()=>{
+          const r = data[parseInt(el.getAttribute('data-i'))];
+          const lat = parseFloat(r.lat), lon = parseFloat(r.lon);
+          if(pickMap){
+            pickMap.setView([lat,lon], 17);
+            pickMarker.setLatLng([lat,lon]);
+          }
+          resultsBox.classList.add('hidden');
+          resultsBox.innerHTML='';
+        };
+      });
+    }catch(e){
+      console.error('地址搜尋失敗', e);
+      resultsBox.innerHTML = '<div class="addr-result-empty">搜尋失敗，請稍後再試，或直接在地圖上點選位置</div>';
+    }finally{
+      addressSearchBusy = false;
+    }
+  }
+
+  document.getElementById('searchAddressBtn').addEventListener('click', searchAddress);
+  document.getElementById('fAddressSearch').addEventListener('keydown', function(e){
+    if(e.key==='Enter'){ e.preventDefault(); searchAddress(); }
+  });
 
   function updateStarPicker(){
     document.querySelectorAll('#starPicker span').forEach(s=>{

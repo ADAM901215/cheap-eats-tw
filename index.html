@@ -146,10 +146,16 @@
   .ticket-bottom{display:flex; align-items:center; gap:10px;}
   .price-label{font-size:11.5px; color:#8b8371;}
   .price-value{font-family:'JetBrains Mono', monospace; font-weight:700; font-size:21px; color:var(--lantern-dark);}
+  .ticket-buttons{ margin-left:auto; display:flex; align-items:center; gap:8px; }
   .locate-btn{
-    margin-left:auto; background:var(--ink); color:var(--rice); border:none; border-radius:8px;
+    background:var(--ink); color:var(--rice); border:none; border-radius:8px;
     padding:7px 11px; font-size:12.5px; font-weight:500;
   }
+  .delete-btn{
+    background:transparent; color:var(--lantern-dark); border:1.5px solid var(--lantern-dark);
+    border-radius:8px; padding:7px 11px; font-size:12.5px; font-weight:500;
+  }
+  .delete-btn:active{ background:var(--lantern-dark); color:#fff; }
   .nickname-tag{font-size:14px; color:#a89d80; margin-top:8px; font-family:'Zhi Mang Xing', cursive;}
 
   .empty-state{
@@ -193,6 +199,14 @@
   .star-picker span{cursor:pointer; color:#d8cca8;}
   .star-picker span.on{color:var(--turmeric);}
   #pickMap{ height:180px; border-radius:10px; margin-top:6px; border:1.5px solid #d8cca8; position:relative; z-index:1; }
+  .address-results{
+    margin-top:6px; border:1.5px solid #d8cca8; border-radius:9px; overflow:hidden; background:#fff;
+    max-height:220px; overflow-y:auto;
+  }
+  .addr-result-item{ padding:10px 12px; font-size:13px; border-bottom:1px solid #ece1c6; cursor:pointer; }
+  .addr-result-item:last-child{ border-bottom:none; }
+  .addr-result-item:hover, .addr-result-item:active{ background:var(--rice-dim); }
+  .addr-result-empty{ padding:10px 12px; font-size:13px; color:var(--charcoal); }
   .sheet-actions{display:flex; gap:10px; margin-top:18px;}
   .btn-secondary, .btn-primary{
     flex:1; padding:12px; border-radius:10px; border:none; font-size:14.5px; font-weight:700;
@@ -311,9 +325,18 @@
     </div>
 
     <div class="field">
+      <label for="fAddressSearch">搜尋店名／地址自動定位（選填）</label>
+      <div style="display:flex; gap:8px;">
+        <input id="fAddressSearch" type="text" placeholder="輸入地址、路名或店名關鍵字" />
+        <button type="button" id="searchAddressBtn" class="btn-secondary" style="flex:0 0 auto; padding:0 16px;">搜尋</button>
+      </div>
+      <div id="addressResults" class="hidden address-results"></div>
+    </div>
+
+    <div class="field">
       <label>店家位置（點地圖放置圖釘）</label>
       <div id="pickMap"></div>
-      <div class="hint">預設會抓你目前看的地圖範圍中心，點一下地圖可以調整位置</div>
+      <div class="hint">搜尋後點選正確地點，圖釘會自動移過去；也可以直接在地圖上點擊微調位置</div>
     </div>
 
     <div class="field">
