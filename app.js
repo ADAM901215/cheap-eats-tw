@@ -750,7 +750,8 @@
   document.getElementById('cancelLoginBtn').onclick = ()=> loginOverlay.classList.add('hidden');
   loginOverlay.addEventListener('click', e=>{ if(e.target===loginOverlay) loginOverlay.classList.add('hidden'); });
 
-  // ---------- Google 登入（如果目前是匿名身分，會把身分「升級」成 Google 帳號，回報/發文紀錄不會不見）----------
+  // ---------- Google 登入（如果目前是匿名身分，會盡量把身分「升級」成 Google 帳號，回報/發文紀錄不會不見；
+  // 但如果 Supabase 專案沒開「Manual linking」，會自動改用一般登入方式，此時匿名時期的回報記錄可能不會自動接到新帳號上）----------
   document.getElementById('googleLoginBtn').addEventListener('click', async function(){
     const btn = this;
     btn.disabled = true;
@@ -760,6 +761,10 @@
     let result;
     if(isAnon && typeof sb.auth.linkIdentity === 'function'){
       result = await sb.auth.linkIdentity({ provider: 'google', options: { redirectTo } });
+      if(result && result.error && /manual linking/i.test(result.error.message || '')){
+        // Supabase 專案沒開啟「Manual linking」，改用一般登入方式，至少讓登入功能能用
+        result = await sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo } });
+      }
     }else{
       result = await sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo } });
     }
