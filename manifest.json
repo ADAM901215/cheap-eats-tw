@@ -1,0 +1,13 @@
+{
+  "name": "窮鬼地圖・200有找",
+  "short_name": "窮鬼地圖",
+  "description": "全民揪團回報的高CP值品項・一餐不超過 200 元",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#FFFFFF",
+  "theme_color": "#FF8A50",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
