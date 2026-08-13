@@ -587,10 +587,22 @@
 <div class="overlay hidden" id="loginOverlay">
   <div class="sheet">
     <div class="sheet-title">登入窮鬼地圖</div>
-    <div class="sheet-sub">輸入 Email，我們會寄一封信給你，點信裡的連結就能登入，不用設密碼。登入後你的回報、發文紀錄可以跨裝置保留。</div>
+    <div class="sheet-sub">登入後你的回報、發文紀錄可以跨裝置保留。</div>
+
+    <button type="button" class="btn-secondary" id="googleLoginBtn" style="width:100%; display:flex; align-items:center; justify-content:center; gap:8px; margin-bottom:14px;">
+      <span style="font-weight:800; color:#4285F4;">G</span> 使用 Google 登入
+    </button>
+
+    <div style="display:flex; align-items:center; gap:10px; margin:4px 0 14px; color:var(--charcoal); font-size:12px;">
+      <div style="flex:1; height:1px; background:var(--border);"></div>
+      或用 Email
+      <div style="flex:1; height:1px; background:var(--border);"></div>
+    </div>
+
     <div class="field">
       <label for="loginEmail">Email</label>
       <input id="loginEmail" type="email" placeholder="you@example.com" />
+      <div class="hint">我們會寄一封信給你，點信裡的連結就能登入，不用設密碼</div>
     </div>
     <div class="sheet-actions">
       <button class="btn-secondary" id="cancelLoginBtn">取消</button>

@@ -749,6 +749,27 @@
   });
   document.getElementById('cancelLoginBtn').onclick = ()=> loginOverlay.classList.add('hidden');
   loginOverlay.addEventListener('click', e=>{ if(e.target===loginOverlay) loginOverlay.classList.add('hidden'); });
+
+  // ---------- Google 登入（如果目前是匿名身分，會把身分「升級」成 Google 帳號，回報/發文紀錄不會不見）----------
+  document.getElementById('googleLoginBtn').addEventListener('click', async function(){
+    const btn = this;
+    btn.disabled = true;
+    const { data: sessionData } = await sb.auth.getSession();
+    const isAnon = sessionData && sessionData.session && sessionData.session.user.is_anonymous;
+    const redirectTo = window.location.origin + window.location.pathname;
+    let result;
+    if(isAnon && typeof sb.auth.linkIdentity === 'function'){
+      result = await sb.auth.linkIdentity({ provider: 'google', options: { redirectTo } });
+    }else{
+      result = await sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo } });
+    }
+    if(result && result.error){
+      console.error('Google 登入失敗', result.error);
+      showToast('Google 登入失敗：' + (result.error.message || '請確認 Supabase 是否已設定 Google 登入'), true);
+      btn.disabled = false;
+    }
+    // 成功的話，瀏覽器會被導去 Google 登入頁，登入完成後會自動導回這個網站並完成登入，不用再手動處理
+  });
   document.getElementById('sendLoginLinkBtn').onclick = async function(){
     const email = document.getElementById('loginEmail').value.trim();
     if(!email || !email.includes('@')){ showToast('請輸入有效的 Email'); return; }
