@@ -18,7 +18,9 @@
 
   let restaurants = [];
   let state = { category:'全部', sort:'rating', search:'' };
-  let map, clusterGroup, pickMap, pickMarker, myLocationMarker;
+  let map, clusterGroup, pickMap, pickMarker, myLocationMarker, myAccuracyCircle;
+  let locationWatchId = null;
+  let lastKnownLatLng = null;
   let markerById = {}; // id -> leaflet marker（方便定位時開 popup）
   let likedIds = new Set(); // 階段一：僅前端本次瀏覽期間記憶，尚未寫入資料庫
   let currentUserId = null;
@@ -99,23 +101,49 @@
       }
     });
     map.addLayer(clusterGroup);
-    tryShowMyLocation(true);
+    startLocationWatch();
   }
 
-  // ---------- 使用者目前位置的藍點 ----------
+  // ---------- 使用者目前位置的藍點（持續追蹤，會隨你移動即時更新）----------
+  function updateMyLocationMarker(pos){
+    const latlng = [pos.coords.latitude, pos.coords.longitude];
+    lastKnownLatLng = latlng;
+    const icon = L.divIcon({ className:'', html:'<div class="my-location-dot"></div>', iconSize:[18,18], iconAnchor:[9,9] });
+    if(!myLocationMarker){
+      myLocationMarker = L.marker(latlng, { icon, zIndexOffset:1000, title:'你的位置' }).addTo(map);
+    }else{
+      myLocationMarker.setLatLng(latlng);
+    }
+    const acc = pos.coords.accuracy;
+    if(acc && acc < 500){
+      if(!myAccuracyCircle){
+        myAccuracyCircle = L.circle(latlng, {
+          radius:acc, interactive:false,
+          color:'#4285F4', weight:1, opacity:0.35, fillColor:'#4285F4', fillOpacity:0.12
+        }).addTo(map);
+      }else{
+        myAccuracyCircle.setLatLng(latlng);
+        myAccuracyCircle.setRadius(acc);
+      }
+    }
+  }
+
+  function startLocationWatch(){
+    if(!navigator.geolocation || locationWatchId!==null) return;
+    locationWatchId = navigator.geolocation.watchPosition(
+      pos=> updateMyLocationMarker(pos),
+      err=> console.warn('位置追蹤失敗', err),
+      { enableHighAccuracy:true, maximumAge:5000, timeout:15000 }
+    );
+  }
+
   function tryShowMyLocation(silent){
     if(!navigator.geolocation) return;
+    startLocationWatch();
+    if(lastKnownLatLng) return;
     navigator.geolocation.getCurrentPosition(
-      pos=>{
-        const latlng = [pos.coords.latitude, pos.coords.longitude];
-        const icon = L.divIcon({ className:'', html:'<div class="my-location-dot"></div>', iconSize:[18,18], iconAnchor:[9,9] });
-        if(!myLocationMarker){
-          myLocationMarker = L.marker(latlng, { icon, zIndexOffset:1000, title:'你的位置' }).addTo(map);
-        }else{
-          myLocationMarker.setLatLng(latlng);
-        }
-      },
-      ()=>{ if(!silent) showToast('無法取得你的位置'); },
+      pos=> updateMyLocationMarker(pos),
+      ()=>{ if(!silent) showToast('無法取得你的位置，請確認已允許定位權限'); },
       { enableHighAccuracy:true, timeout:8000 }
     );
   }
@@ -495,12 +523,17 @@
   });
   document.getElementById('locateBtn').addEventListener('click', function(){
     if(!navigator.geolocation){ showToast('這個瀏覽器不支援定位'); return; }
+    startLocationWatch();
+    if(lastKnownLatLng){
+      map.flyTo(lastKnownLatLng, 15, {duration:0.6});
+      return;
+    }
     navigator.geolocation.getCurrentPosition(
       pos=>{
-        map.flyTo([pos.coords.latitude,pos.coords.longitude], 15, {duration:0.6});
-        tryShowMyLocation(true);
+        updateMyLocationMarker(pos);
+        map.flyTo(lastKnownLatLng, 15, {duration:0.6});
       },
-      ()=>{ showToast('無法取得你的位置'); }
+      ()=>{ showToast('無法取得你的位置，請確認已允許定位權限'); }
     );
   });
 
@@ -751,12 +784,6 @@
   }
 
   // ---------- 個人任務／積分儀表板 ----------
-  const REWARDS = [
-    { key:'coffee', emoji:'☕', name:'一杯咖啡', cost:400 },
-    { key:'braise', emoji:'🍚', name:'一碗滷肉飯', cost:800 },
-    { key:'coupon50', emoji:'🎫', name:'超商 $50 禮券', cost:1000 },
-    { key:'coupon100', emoji:'🎟️', name:'超商 $100 禮券', cost:1800 }
-  ];
   let myPoints = { points:0, checkin_streak:0, last_checkin_date:null, reports_count:0, photo_reports_count:0 };
   const todayTaipei = ()=>{
     // 用台灣時區算「今天」的日期字串，跟資料庫函式的邏輯一致
@@ -816,54 +843,8 @@
     await loadPoints();
   });
 
-  function renderRewardGrid(){
-    const grid = document.getElementById('rewardGrid');
-    document.getElementById('rewardsPointsText').textContent = (myPoints.points||0) + ' pt';
-    grid.innerHTML = REWARDS.map(r=>{
-      const canAfford = (myPoints.points||0) >= r.cost;
-      return `
-      <div class="reward-card">
-        <div class="reward-emoji">${r.emoji}</div>
-        <div class="reward-name">${r.name}</div>
-        <div class="reward-cost">${r.cost} pt</div>
-        <button class="redeem-btn" data-redeem="${r.key}" data-cost="${r.cost}" data-name="${r.name}" ${canAfford?'':'disabled'}>
-          ${canAfford ? '立即兌換' : '積分不足'}
-        </button>
-      </div>`;
-    }).join('');
-    grid.querySelectorAll('[data-redeem]').forEach(btn=>{
-      btn.onclick = ()=> redeemReward(parseInt(btn.getAttribute('data-cost')), btn.getAttribute('data-name'));
-    });
-  }
-
-  async function redeemReward(cost, name){
-    if(!currentUserId){ showToast('連線尚未就緒，請稍後再試', true); return; }
-    const ok = window.confirm(`確定要用 ${cost} pt 兌換「${name}」嗎？`);
-    if(!ok) return;
-    const { data, error } = await sb.rpc('redeem_points', { p_cost: cost });
-    if(error){
-      console.error('兌換失敗', error);
-      showToast('兌換失敗：' + (error.message || '請稍後再試'), true);
-      return;
-    }
-    const result = Array.isArray(data) ? data[0] : data;
-    if(result && result.success){
-      showToast(`兌換成功！「${name}」已扣 ${cost} pt 🎉`);
-      myPoints.points = result.new_points;
-      renderDashboard();
-      renderRewardGrid();
-    }else{
-      showToast('積分不足，無法兌換');
-    }
-  }
-
-  const rewardsOverlay = document.getElementById('rewardsOverlay');
-  document.getElementById('openRewardsBtn').addEventListener('click', function(){
-    renderRewardGrid();
-    rewardsOverlay.classList.remove('hidden');
-  });
-  document.getElementById('closeRewardsBtn').onclick = ()=> rewardsOverlay.classList.add('hidden');
-  rewardsOverlay.addEventListener('click', e=>{ if(e.target===rewardsOverlay) rewardsOverlay.classList.add('hidden'); });
+  // 積分兌換商店尚未開放（等後續談好店家合作、核銷方式後再加回前端入口）。
+  // 後端的 redeem_points() 函式先保留在資料庫裡，之後要開放時不用再改資料庫結構。
 
   (async function init(){
     initMap();

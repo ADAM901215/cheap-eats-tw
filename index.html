@@ -76,8 +76,8 @@
   }
   .search-input::placeholder{color:#9AA0AC;}
   .locate-icon-btn{
-    background:var(--ink); border:none; border-radius:10px;
-    width:42px; height:42px; font-size:16px; color:#fff; flex-shrink:0;
+    background:var(--mist); border:none; border-radius:10px;
+    width:42px; height:42px; font-size:16px; color:var(--ink); flex-shrink:0;
   }
 
   /* ---------- Filter chips ---------- */
@@ -94,7 +94,7 @@
     background:var(--rice); font-size:13.5px; font-weight:500; color:var(--charcoal);
     white-space:nowrap;
   }
-  .chip.active{background:var(--ink); border-color:var(--ink); color:#fff;}
+  .chip.active{background:var(--sage); border-color:var(--sage); color:var(--ink); font-weight:700;}
   .sort-row{display:flex; align-items:center; gap:8px; margin-top:8px; font-size:13px;}
   .sort-row select{
     padding:6px 8px; border-radius:8px; border:1.5px solid var(--border); background:var(--rice);
@@ -166,7 +166,7 @@
   .cat-emoji{
     font-size:18px; line-height:1; width:36px; height:36px; flex-shrink:0;
     display:flex; align-items:center; justify-content:center;
-    background:var(--rice-dim); border-radius:10px;
+    background:var(--beige); border-radius:12px;
   }
   .ticket-name-wrap{flex:1; min-width:0;}
   .ticket-dish{font-size:16px; font-weight:700; line-height:1.3;}
@@ -489,7 +489,9 @@
       <div class="progress-track"><div class="progress-fill" id="cheapTaskProgress" style="width:0%;"></div></div>
     </div>
 
-    <button class="shop-entry-btn" id="openRewardsBtn">🎁 前往積分兌換商店</button>
+    <div class="task-card" style="text-align:center; color:var(--charcoal); font-size:12.5px; line-height:1.6;">
+      🎁 積分兌換商店開發中，敬請期待！<br/>先把積分和任務累積起來，之後開放兌換時可以直接使用。
+    </div>
   </div>
 </div>
 
@@ -586,18 +588,6 @@
 
 <div class="overlay hidden" id="postDetailOverlay">
   <div class="sheet" id="postDetailSheet"></div>
-</div>
-
-<div class="overlay hidden" id="rewardsOverlay">
-  <div class="sheet">
-    <div class="sheet-title">🎁 積分兌換商店</div>
-    <div class="sheet-sub">目前積分：<strong id="rewardsPointsText">0 pt</strong></div>
-    <div class="reward-grid" id="rewardGrid"></div>
-    <div class="shop-note">兌換成功後請截圖畫面，目前為測試階段，實際到店兌換方式將由店家合作後另行公告。</div>
-    <div class="sheet-actions">
-      <button class="btn-secondary" id="closeRewardsBtn" style="flex:1;">關閉</button>
-    </div>
-  </div>
 </div>
 
 <div class="overlay hidden" id="overlay">
