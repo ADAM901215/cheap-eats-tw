@@ -52,12 +52,16 @@
   }
 
   // ---------- 讀取資料 ----------
+  // 顯示規則：所有「approved」的品項大家都看得到；「pending」（審核中）的品項只有回報者自己看得到，
+  // 並會標示「審核中」，其他人暫時看不到，等審核通過才會公開。
   async function loadData(){
-    const { data, error } = await sb
-      .from('restaurants')
-      .select('*')
-      .eq('status', 'approved')
-      .order('created_at', { ascending:false });
+    let query = sb.from('restaurants').select('*').order('created_at', { ascending:false });
+    if(currentUserId){
+      query = query.or(`status.eq.approved,and(status.eq.pending,reporter_id.eq.${currentUserId})`);
+    }else{
+      query = query.eq('status', 'approved');
+    }
+    const { data, error } = await query;
     if(error){
       console.error('讀取資料失敗', error);
       document.getElementById('listContainer').innerHTML =
@@ -80,6 +84,10 @@
       likes: r.likes || 0,
       confirmCount: r.confirm_count || 0,
       isVerified: r.is_verified,
+      status: r.status,
+      tags: r.tags || [],
+      businessHours: r.business_hours,
+      note: r.note,
       createdAt: new Date(r.created_at).getTime()
     }));
     renderAll();
@@ -198,7 +206,7 @@
       m.bindPopup(
         `<div style="min-width:170px;">
           <strong>${escapeHtml(r.dishName)}</strong>　<span style="font-family:'JetBrains Mono',monospace; font-weight:700;">$${r.price}</span><br/>
-          <span style="font-size:12px; color:#6B7280;">${escapeHtml(r.storeName)}</span><br/>
+          <span style="font-size:12px; color:#6B7280;">${escapeHtml(r.storeName)}</span>${r.status==='pending'? ' <span style="font-size:11px; color:#E5AC55; font-weight:700;">⏳審核中</span>':''}<br/>
           <span style="color:${t.color}; font-weight:700; font-size:12px;">${t.label}</span>　${starString(r.rating)}<br/>
           <span style="font-size:12.5px;">${escapeHtml(r.comment||'')}</span><br/>
           <a href="https://www.google.com/maps/dir/?api=1&destination=${r.lat},${r.lng}" target="_blank" rel="noopener" style="font-size:12.5px;">🧭 導航前往</a>
@@ -230,11 +238,12 @@
           <span class="cat-emoji">${CAT_EMOJI[r.category]||'🍽️'}</span>
           <div class="ticket-name-wrap">
             <div class="ticket-dish">${escapeHtml(r.dishName)}</div>
-            <div class="ticket-store">${escapeHtml(r.storeName)}${r.isVerified? '<span class="verified-badge">✓ 店家認證</span>':''}</div>
+            <div class="ticket-store">${escapeHtml(r.storeName)}${r.isVerified? '<span class="verified-badge">✓ 店家認證</span>':''}${r.status==='pending'? '<span class="pending-badge">⏳ 審核中</span>':''}</div>
           </div>
           <span class="tier-tag" style="background:${t.color}">${t.label}</span>
         </div>
         <p class="ticket-comment">「${escapeHtml(r.comment||'')}」</p>
+        ${r.tags && r.tags.length ? `<div class="tag-pick-list" style="margin-bottom:8px;">${r.tags.map(t=>`<span class="tag-chip active" style="pointer-events:none; padding:4px 10px; font-size:11.5px;">${escapeHtml(t)}</span>`).join('')}</div>` : ''}
         <div class="ticket-meta">
           <span class="stars">${starString(r.rating)}</span>
           <button class="like-btn ${liked?'liked':''}" data-like="${r.id}">👍 ${r.likes||0}</button>
@@ -332,9 +341,16 @@
     setTimeout(()=>el.remove(), 2400);
   }
 
-  // ---------- Add restaurant modal ----------
+  // ---------- Add restaurant modal（一步一步引導的回報流程）----------
+  const TAG_OPTIONS = ['現金','學生優惠','外帶方便','座位少','可停車'];
+  const TOTAL_STEPS = 9;
+  let currentStep = 1;
   let chosenRating = 0;
-  let chosenPhotoFile = null;
+  let chosenPhotoFiles = [];
+  let chosenCategory = null;
+  let chosenTags = [];
+  let addressSelected = false;
+  let selectedAddressText = '';
   const overlay = document.getElementById('overlay');
 
   function openModal(){
@@ -343,32 +359,140 @@
     document.getElementById('fDish').value='';
     document.getElementById('fPrice').value='';
     document.getElementById('fComment').value='';
-    document.getElementById('fNick').value='';
+    document.getElementById('fNick').value = NICKS[Math.floor(Math.random()*NICKS.length)] + Math.floor(Math.random()*9000+1000);
     document.getElementById('fPhoto').value='';
-    chosenPhotoFile = null;
+    document.getElementById('fHours').value='';
+    document.getElementById('fNote').value='';
+    chosenPhotoFiles = [];
+    document.getElementById('photoPreviewRow').innerHTML='';
     document.getElementById('fAddressSearch').value='';
     document.getElementById('addressResults').classList.add('hidden');
     document.getElementById('addressResults').innerHTML='';
+    document.getElementById('selectedStoreWrap').style.display='none';
+    addressSelected = false;
+    selectedAddressText = '';
     document.getElementById('priceHint').textContent = '超過 200 就不是「俗擱大碗」囉，上限 200 元';
     document.getElementById('priceHint').classList.remove('err');
     chosenRating = 0;
+    chosenCategory = null;
+    chosenTags = [];
     updateStarPicker();
-    setTimeout(()=>{
-      const center = map.getCenter();
-      if(!pickMap){
-        pickMap = L.map('pickMap').setView([center.lat,center.lng], 15);
-        L.tileLayer(TILE_URL, { attribution: TILE_ATTR, maxZoom:20 }).addTo(pickMap);
-        pickMarker = L.marker([center.lat,center.lng], {draggable:true}).addTo(pickMap);
-        pickMap.on('click', e=> pickMarker.setLatLng(e.latlng));
-      }else{
-        pickMap.setView([center.lat,center.lng], 15);
-        pickMarker.setLatLng([center.lat,center.lng]);
-        pickMap.invalidateSize();
-      }
-    }, 60);
+    showStep(1);
   }
 
   function closeModal(){ overlay.classList.add('hidden'); }
+
+  // ---------- Wizard 導覽 ----------
+  function stepErrorMessage(step){
+    switch(step){
+      case 1: return '請填寫暱稱';
+      case 2: return '請先搜尋並選擇正確的店家';
+      case 3: return '請填寫品項名稱與 1～200 之間的價格';
+      case 4: return '請選一個分類';
+      case 6: return '請給個評分';
+      case 7: return '請至少上傳 1 張照片';
+      default: return '請完成這一步再繼續';
+    }
+  }
+
+  function validateStep(step){
+    switch(step){
+      case 1: return document.getElementById('fNick').value.trim().length>0;
+      case 2: return addressSelected && document.getElementById('fStore').value.trim().length>0;
+      case 3: {
+        const dish = document.getElementById('fDish').value.trim();
+        const price = parseInt(document.getElementById('fPrice').value);
+        return dish.length>0 && price>=1 && price<=200;
+      }
+      case 4: return !!chosenCategory;
+      case 5: return true;
+      case 6: return chosenRating>0;
+      case 7: return chosenPhotoFiles.length>=1;
+      case 8: return true;
+      case 9: return true;
+      default: return true;
+    }
+  }
+
+  function showStep(n){
+    currentStep = n;
+    document.querySelectorAll('.wizard-step').forEach(el=>{
+      el.classList.toggle('hidden', parseInt(el.getAttribute('data-step'))!==n);
+    });
+    document.getElementById('wizardStepCount').textContent = n + ' / ' + TOTAL_STEPS;
+    document.getElementById('wizardProgressFill').style.width = Math.round(n/TOTAL_STEPS*100) + '%';
+    document.getElementById('wizardPrevBtn').style.visibility = n===1 ? 'hidden' : 'visible';
+    document.getElementById('wizardNextBtn').textContent = n===TOTAL_STEPS ? '送出回報' : '下一步';
+    if(n===4) renderCategoryPickList();
+    if(n===5) renderTagPickList();
+    if(n===9) renderWizardSummary();
+    if(n===2 && pickMap) setTimeout(()=> pickMap.invalidateSize(), 50);
+  }
+
+  document.getElementById('wizardNextBtn').addEventListener('click', async function(){
+    if(!validateStep(currentStep)){
+      showToast(stepErrorMessage(currentStep));
+      return;
+    }
+    if(currentStep < TOTAL_STEPS){
+      showStep(currentStep+1);
+    }else{
+      await submitReport(this);
+    }
+  });
+  document.getElementById('wizardPrevBtn').addEventListener('click', function(){
+    if(currentStep>1) showStep(currentStep-1);
+  });
+
+  document.getElementById('reRollNickBtn').addEventListener('click', function(){
+    document.getElementById('fNick').value = NICKS[Math.floor(Math.random()*NICKS.length)] + Math.floor(Math.random()*9000+1000);
+  });
+
+  function renderCategoryPickList(){
+    const wrap = document.getElementById('categoryPickList');
+    wrap.innerHTML = CATS.filter(c=>c!=='全部').map(c=>`
+      <button type="button" class="category-pick-item ${chosenCategory===c?'active':''}" data-cat="${c}">
+        <span>${CAT_EMOJI[c]}</span> ${c}
+      </button>`).join('');
+    wrap.querySelectorAll('[data-cat]').forEach(btn=>{
+      btn.onclick = ()=>{ chosenCategory = btn.getAttribute('data-cat'); renderCategoryPickList(); };
+    });
+  }
+
+  function renderTagPickList(){
+    const wrap = document.getElementById('tagPickList');
+    wrap.innerHTML = TAG_OPTIONS.map(t=>`
+      <button type="button" class="tag-chip ${chosenTags.includes(t)?'active':''}" data-tag="${escapeHtml(t)}">${escapeHtml(t)}</button>
+    `).join('');
+    wrap.querySelectorAll('[data-tag]').forEach(btn=>{
+      btn.onclick = ()=>{
+        const t = btn.getAttribute('data-tag');
+        if(chosenTags.includes(t)) chosenTags = chosenTags.filter(x=>x!==t);
+        else chosenTags.push(t);
+        renderTagPickList();
+      };
+    });
+  }
+
+  function renderWizardSummary(){
+    const rows = [
+      ['暱稱', document.getElementById('fNick').value.trim()],
+      ['店家', document.getElementById('fStore').value.trim()],
+      ['地址', selectedAddressText || '（未提供）'],
+      ['品項', document.getElementById('fDish').value.trim()],
+      ['價格', '$' + (document.getElementById('fPrice').value || '')],
+      ['分類', chosenCategory || ''],
+      ['特色標籤', chosenTags.length ? chosenTags.join('、') : '（無）'],
+      ['評分', starString(chosenRating)],
+      ['一句話推薦', document.getElementById('fComment').value.trim() || '（無）'],
+      ['照片', chosenPhotoFiles.length + ' 張'],
+      ['營業時間', document.getElementById('fHours').value.trim() || '（未提供）'],
+      ['備註', document.getElementById('fNote').value.trim() || '（無）']
+    ];
+    document.getElementById('wizardSummary').innerHTML = rows.map(([label,value])=>`
+      <div class="summary-row"><span class="summary-label">${escapeHtml(label)}</span><span class="summary-value">${escapeHtml(String(value))}</span></div>
+    `).join('');
+  }
 
   // ---------- 地址／店名搜尋自動定位（使用 OpenStreetMap 的免費 Nominatim 服務）----------
   let addressSearchBusy = false;
@@ -391,7 +515,7 @@
       const res = await fetch(url, { headers: { 'Accept-Language': 'zh-TW' } });
       const data = await res.json();
       if(!data || data.length===0){
-        resultsBox.innerHTML = '<div class="addr-result-empty">找不到符合的地點，換個關鍵字試試，或直接在地圖上點選位置</div>';
+        resultsBox.innerHTML = '<div class="addr-result-empty">找不到符合的地點，換個關鍵字試試看</div>';
         return;
       }
       resultsBox.innerHTML = data.map((r,i)=>`<div class="addr-result-item" data-i="${i}">${escapeHtml(r.display_name)}</div>`).join('');
@@ -399,17 +523,33 @@
         el.onclick = ()=>{
           const r = data[parseInt(el.getAttribute('data-i'))];
           const lat = parseFloat(r.lat), lon = parseFloat(r.lon);
-          if(pickMap){
+
+          if(!pickMap){
+            pickMap = L.map('pickMap').setView([lat,lon], 17);
+            L.tileLayer(TILE_URL, { attribution: TILE_ATTR, maxZoom:20 }).addTo(pickMap);
+            pickMarker = L.marker([lat,lon], {draggable:true}).addTo(pickMap);
+            pickMap.on('click', e=> pickMarker.setLatLng(e.latlng));
+          }else{
             pickMap.setView([lat,lon], 17);
             pickMarker.setLatLng([lat,lon]);
           }
+
+          addressSelected = true;
+          selectedAddressText = r.display_name;
+          const storeInput = document.getElementById('fStore');
+          if(!storeInput.value.trim()){ storeInput.value = q; }
+          document.getElementById('selectedStoreCard').innerHTML =
+            `<strong>${escapeHtml(q)}</strong><br/>${escapeHtml(r.display_name)}`;
+          document.getElementById('selectedStoreWrap').style.display = 'block';
+          setTimeout(()=> pickMap.invalidateSize(), 50);
+
           resultsBox.classList.add('hidden');
           resultsBox.innerHTML='';
         };
       });
     }catch(e){
       console.error('地址搜尋失敗', e);
-      resultsBox.innerHTML = '<div class="addr-result-empty">搜尋失敗，請稍後再試，或直接在地圖上點選位置</div>';
+      resultsBox.innerHTML = '<div class="addr-result-empty">搜尋失敗，請稍後再試</div>';
     }finally{
       addressSearchBusy = false;
     }
@@ -435,7 +575,15 @@
   overlay.addEventListener('click', e=>{ if(e.target===overlay) closeModal(); });
 
   document.getElementById('fPhoto').addEventListener('change', function(){
-    chosenPhotoFile = this.files && this.files[0] ? this.files[0] : null;
+    chosenPhotoFiles = Array.from(this.files || []).slice(0,3);
+    const row = document.getElementById('photoPreviewRow');
+    row.innerHTML = '';
+    chosenPhotoFiles.forEach(f=>{
+      const img = document.createElement('img');
+      img.className = 'photo-preview-thumb';
+      img.src = URL.createObjectURL(f);
+      row.appendChild(img);
+    });
   });
 
   document.getElementById('fPrice').addEventListener('input', function(){
@@ -445,36 +593,39 @@
     else { hint.textContent='超過 200 就不是「俗擱大碗」囉，上限 200 元'; hint.classList.remove('err'); }
   });
 
-  async function uploadPhotoIfAny(){
-    if(!chosenPhotoFile) return null;
-    const ext = (chosenPhotoFile.name.split('.').pop() || 'jpg').toLowerCase();
-    const path = `${currentUserId}/${Date.now()}.${ext}`;
-    const { error } = await sb.storage.from(PHOTO_BUCKET).upload(path, chosenPhotoFile, {
-      cacheControl: '3600',
-      upsert: false
-    });
-    if(error){
-      console.error('照片上傳失敗', error);
-      showToast('照片上傳失敗，其他資料仍會送出', true);
-      return null;
+  async function uploadPhotos(){
+    const urls = [];
+    for(const file of chosenPhotoFiles){
+      const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
+      const path = `${currentUserId}/${Date.now()}_${urls.length}.${ext}`;
+      const { error } = await sb.storage.from(PHOTO_BUCKET).upload(path, file, {
+        cacheControl: '3600',
+        upsert: false
+      });
+      if(error){
+        console.error('照片上傳失敗', error);
+        showToast('有一張照片上傳失敗，其他資料仍會送出', true);
+        continue;
+      }
+      const { data } = sb.storage.from(PHOTO_BUCKET).getPublicUrl(path);
+      if(data && data.publicUrl) urls.push(data.publicUrl);
     }
-    const { data } = sb.storage.from(PHOTO_BUCKET).getPublicUrl(path);
-    return data ? data.publicUrl : null;
+    return urls;
   }
 
-  document.getElementById('submitAddBtn').onclick = async function(){
-    const submitBtn = this;
+  async function submitReport(submitBtn){
     const storeName = document.getElementById('fStore').value.trim();
     const dishName = document.getElementById('fDish').value.trim();
-    const category = document.getElementById('fCategory').value;
     const price = parseInt(document.getElementById('fPrice').value);
     const comment = document.getElementById('fComment').value.trim();
+    const hours = document.getElementById('fHours').value.trim();
+    const note = document.getElementById('fNote').value.trim();
     let nickname = document.getElementById('fNick').value.trim();
 
-    if(!storeName){ showToast('請填寫店名'); return; }
-    if(!dishName){ showToast('請填寫招牌品項名稱'); return; }
-    if(!price || price<1 || price>200){ showToast('價格請填 1～200 之間'); return; }
-    if(chosenRating===0){ showToast('請給個評分'); return; }
+    if(!storeName || !dishName || !price || price<1 || price>200 || !chosenCategory || chosenRating===0 || chosenPhotoFiles.length===0 || !pickMarker){
+      showToast('資料不完整，請確認每一步都已填寫');
+      return;
+    }
     if(!currentUserId){ showToast('連線尚未就緒，請稍後再試', true); return; }
     if(!nickname) nickname = NICKS[Math.floor(Math.random()*NICKS.length)];
 
@@ -483,20 +634,24 @@
     submitBtn.disabled = true;
     submitBtn.textContent = '送出中…';
 
-    const photoUrl = await uploadPhotoIfAny();
+    const photoUrls = await uploadPhotos();
 
     const { data, error } = await sb.from('restaurants').insert({
       store_name: storeName,
       dish_name: dishName,
-      category, price, rating: chosenRating, comment,
+      category: chosenCategory, price, rating: chosenRating, comment,
       lat: pos.lat, lng: pos.lng,
       nickname,
       reporter_id: currentUserId,
-      photo_url: photoUrl
+      photo_url: photoUrls[0] || null,
+      photo_urls: photoUrls,
+      tags: chosenTags,
+      business_hours: hours || null,
+      note: note || null
     }).select().single();
 
     submitBtn.disabled = false;
-    submitBtn.textContent = '蓋章送出';
+    submitBtn.textContent = '送出回報';
 
     if(error){
       console.error('送出失敗', error);
@@ -506,9 +661,13 @@
 
     closeModal();
     await loadData();
-    showToast('蓋章成功！感謝你的回報 🎫');
+    if(data && data.status==='pending'){
+      showToast('已送出，系統判斷需要人工審核，通過後才會公開給大家看到 ⏳');
+    }else{
+      showToast('蓋章成功！感謝你的回報 🎫');
+    }
     setTimeout(()=>locateOnMap(data.id), 300);
-  };
+  }
 
   // ---------- Filters / search / sort ----------
   let searchDebounceTimer = null;

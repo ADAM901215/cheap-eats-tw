@@ -121,6 +121,64 @@ create policy "restaurants_delete_own"
 
 -- 一般使用者仍不可 UPDATE restaurants，也不能刪除別人回報的資料（避免亂改／亂刪別人回報）
 
+-- ------------------------------------------------------------
+-- 新增欄位：搭配「一步一步引導」回報流程新增的資料
+-- ------------------------------------------------------------
+alter table public.restaurants add column if not exists tags text[] not null default '{}';
+alter table public.restaurants add column if not exists photo_urls text[] not null default '{}';
+alter table public.restaurants add column if not exists business_hours text;
+alter table public.restaurants add column if not exists note text;
+
+-- ------------------------------------------------------------
+-- Trigger：自動審核（不用 AI／不用另外花錢）
+-- 用規則檢查店名／品項名稱／一句話推薦，如果疑似廣告、亂打、留聯絡方式、
+-- 髒話等，狀態設成 pending（要人工到 Table Editor 看過才會顯示在地圖上）；
+-- 沒中任何規則的話直接 approved，維持原本「送出就能看到」的體驗，
+-- 不會讓每一筆正常回報都卡關。
+-- ------------------------------------------------------------
+create or replace function public.auto_moderate_restaurant()
+returns trigger as $$
+declare
+  txt text;
+  flagged boolean := false;
+  blacklist text[] := array[
+    'line id','加賴','賴id','貸款','博弈','投資理財','代購','刷單','儲值','課金','招募','代辦',
+    'whatsapp','telegram','instagram','ig:','fb:','www.','http://','https://','.com','.tw/',
+    '幹你','媽的','三小','靠北','幹恁','sex','約炮'
+  ];
+  kw text;
+begin
+  txt := lower(coalesce(new.store_name,'') || ' ' || coalesce(new.dish_name,'') || ' ' || coalesce(new.comment,''));
+
+  foreach kw in array blacklist loop
+    if position(kw in txt) > 0 then
+      flagged := true;
+      exit;
+    end if;
+  end loop;
+
+  if length(trim(coalesce(new.store_name,''))) < 2 or length(trim(coalesce(new.dish_name,''))) < 2 then
+    flagged := true;
+  end if;
+
+  if new.store_name ~ '^(.)\1{2,}$' or new.dish_name ~ '^(.)\1{2,}$' then
+    flagged := true;
+  end if;
+
+  if txt ~ '09[0-9]{8}' then
+    flagged := true;
+  end if;
+
+  new.status := case when flagged then 'pending' else 'approved' end;
+  return new;
+end;
+$$ language plpgsql;
+
+drop trigger if exists before_restaurant_insert_moderate on public.restaurants;
+create trigger before_restaurant_insert_moderate
+  before insert on public.restaurants
+  for each row execute function public.auto_moderate_restaurant();
+
 -- likes：所有人可讀
 drop policy if exists "likes_select_all" on public.likes;
 create policy "likes_select_all"

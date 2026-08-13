@@ -179,6 +179,10 @@
     font-size:10.5px; font-weight:700; padding:2px 7px; border-radius:5px;
     background:var(--jade); color:#fff; white-space:nowrap; margin-left:4px;
   }
+  .pending-badge{
+    font-size:10.5px; font-weight:700; padding:2px 7px; border-radius:5px;
+    background:var(--turmeric); color:#fff; white-space:nowrap; margin-left:4px;
+  }
   .ticket-comment{font-size:13px; color:var(--charcoal); margin:8px 0; line-height:1.5;}
   .ticket-meta{display:flex; align-items:center; gap:10px; font-size:13px;}
   .stars{color:var(--turmeric); letter-spacing:1px;}
@@ -359,6 +363,38 @@
   .addr-result-item:last-child{ border-bottom:none; }
   .addr-result-item:hover, .addr-result-item:active{ background:var(--rice-dim); }
   .addr-result-empty{ padding:10px 12px; font-size:13px; color:var(--charcoal); }
+  /* ---------- 一步一步引導的回報流程（Wizard）---------- */
+  .wizard-header{ margin-bottom:16px; }
+  .wizard-progress{ height:5px; background:var(--rice-dim); border-radius:4px; overflow:hidden; }
+  .wizard-progress-fill{ height:100%; background:var(--lantern); border-radius:4px; transition:width .25s ease; }
+  .wizard-step-count{ font-family:'JetBrains Mono', monospace; font-size:11.5px; color:var(--charcoal); margin-top:6px; text-align:right; }
+  .wizard-step.hidden{ display:none !important; }
+  .category-pick-list{ display:flex; flex-direction:column; gap:8px; }
+  .category-pick-item{
+    display:flex; align-items:center; gap:10px; text-align:left;
+    padding:13px 14px; border-radius:14px; border:1.5px solid var(--border); background:var(--rice);
+    font-size:14.5px; color:var(--ink);
+  }
+  .category-pick-item span{ font-size:19px; }
+  .category-pick-item.active{ border-color:var(--sage); background:var(--sage); font-weight:700; }
+  .tag-pick-list{ display:flex; flex-wrap:wrap; gap:8px; }
+  .tag-chip{
+    padding:9px 15px; border-radius:20px; border:1.5px solid var(--border); background:var(--rice);
+    font-size:13.5px; color:var(--charcoal);
+  }
+  .tag-chip.active{ background:var(--beige); border-color:var(--turmeric); color:var(--ink); font-weight:700; }
+  .selected-store-card{
+    background:var(--rice-dim); border:1.5px solid var(--border); border-radius:12px; padding:10px 12px; font-size:13px; line-height:1.6;
+  }
+  .selected-store-card strong{ font-size:14.5px; }
+  .photo-preview-row{ display:flex; gap:8px; margin-top:10px; flex-wrap:wrap; }
+  .photo-preview-thumb{ width:64px; height:64px; object-fit:cover; border-radius:10px; border:1px solid var(--border); }
+  .wizard-summary{ display:flex; flex-direction:column; gap:0; }
+  .summary-row{ display:flex; justify-content:space-between; gap:12px; padding:10px 0; border-top:1px solid var(--border); font-size:13.5px; }
+  .summary-row:first-child{ border-top:none; }
+  .summary-label{ color:var(--charcoal); flex-shrink:0; }
+  .summary-value{ text-align:right; font-weight:700; }
+
   .sheet-actions{display:flex; gap:10px; margin-top:18px;}
   .btn-secondary, .btn-primary{
     flex:1; padding:12px; border-radius:12px; border:none; font-size:14.5px; font-weight:700;
@@ -592,78 +628,121 @@
 
 <div class="overlay hidden" id="overlay">
   <div class="sheet">
-    <div class="sheet-title">回報一道 200 有找的品項</div>
-    <div class="sheet-sub">請填「哪間店的哪道菜／哪個套餐」，大家會看到你回報的資料，請盡量填寫真實資訊唷。</div>
-
-    <div class="field">
-      <label for="fStore">店名</label>
-      <input id="fStore" type="text" placeholder="例如：巷口無名滷肉飯" maxlength="30" />
+    <div class="wizard-header">
+      <div class="wizard-progress"><div class="wizard-progress-fill" id="wizardProgressFill" style="width:11%;"></div></div>
+      <div class="wizard-step-count" id="wizardStepCount">1 / 9</div>
     </div>
 
-    <div class="field">
-      <label for="fDish">招牌品項名稱</label>
-      <input id="fDish" type="text" placeholder="例如：乾麵套餐" maxlength="30" />
-      <div class="hint">價格是指「這個品項」，不是整間店的均價</div>
-    </div>
-
-    <div class="field">
-      <label for="fCategory">分類</label>
-      <select id="fCategory">
-        <option value="早餐">🥯 早餐</option>
-        <option value="正餐">🍚 正餐</option>
-        <option value="小吃">🍢 小吃</option>
-        <option value="飲料">🥤 飲料</option>
-        <option value="宵夜">🌙 宵夜</option>
-      </select>
-    </div>
-
-    <div class="field">
-      <label for="fPrice">這個品項的價格（新台幣）</label>
-      <input id="fPrice" type="number" min="1" max="200" placeholder="150" />
-      <div class="hint" id="priceHint">超過 200 就不是「俗擱大碗」囉，上限 200 元</div>
-    </div>
-
-    <div class="field">
-      <label>評分</label>
-      <div class="star-picker" id="starPicker">
-        <span data-v="1">★</span><span data-v="2">★</span><span data-v="3">★</span><span data-v="4">★</span><span data-v="5">★</span>
+    <div class="wizard-step" data-step="1">
+      <div class="sheet-title">幫自己取個暱稱</div>
+      <div class="sheet-sub">大家會看到這個暱稱。登入後可以固定使用，現在也可以先用臨時暱稱回報。</div>
+      <div class="field">
+        <label for="fNick">暱稱</label>
+        <div style="display:flex; gap:8px;">
+          <input id="fNick" type="text" maxlength="12" placeholder="省錢戰士" style="flex:1;" />
+          <button type="button" id="reRollNickBtn" class="btn-secondary" style="flex:0 0 auto; width:44px; padding:0;">🔄</button>
+        </div>
       </div>
     </div>
 
-    <div class="field">
-      <label for="fComment">一句話推薦</label>
-      <textarea id="fComment" maxlength="60" placeholder="例如：便宜大碗，湯頭很夠味！"></textarea>
-    </div>
-
-    <div class="field">
-      <label for="fPhoto">上傳菜單／收據照片（選填）</label>
-      <input id="fPhoto" type="file" accept="image/*" />
-      <div class="hint">作為佐證，未來也會用來審核店家認證</div>
-    </div>
-
-    <div class="field">
-      <label for="fAddressSearch">搜尋店名／地址自動定位（選填）</label>
-      <div style="display:flex; gap:8px;">
-        <input id="fAddressSearch" type="text" placeholder="輸入地址、路名或店名關鍵字" />
-        <button type="button" id="searchAddressBtn" class="btn-secondary" style="flex:0 0 auto; padding:0 16px;">搜尋</button>
+    <div class="wizard-step hidden" data-step="2">
+      <div class="sheet-title">要回報哪一家店？</div>
+      <div class="sheet-sub">請搜尋店名或地址，從結果中選擇正確的店家，這樣位置才會準確，也能避免重複回報。</div>
+      <div class="field">
+        <label for="fAddressSearch">店名／地址關鍵字</label>
+        <div style="display:flex; gap:8px;">
+          <input id="fAddressSearch" type="text" placeholder="例如：巷口無名滷肉飯 或 台北市大安區…" style="flex:1;" />
+          <button type="button" id="searchAddressBtn" class="btn-secondary" style="flex:0 0 auto; padding:0 16px;">搜尋</button>
+        </div>
+        <div id="addressResults" class="hidden address-results"></div>
       </div>
-      <div id="addressResults" class="hidden address-results"></div>
+      <div class="field" id="selectedStoreWrap" style="display:none;">
+        <label>已選擇的店家（可微調圖釘位置）</label>
+        <div class="selected-store-card" id="selectedStoreCard"></div>
+        <div id="pickMap" style="margin-top:8px;"></div>
+      </div>
+      <div class="field">
+        <label for="fStore">店名（可微調）</label>
+        <input id="fStore" type="text" maxlength="30" placeholder="搜尋並選擇後會自動帶入" />
+      </div>
     </div>
 
-    <div class="field">
-      <label>店家位置（點地圖放置圖釘）</label>
-      <div id="pickMap"></div>
-      <div class="hint">搜尋後點選正確地點，圖釘會自動移過去；也可以直接在地圖上點擊微調位置</div>
+    <div class="wizard-step hidden" data-step="3">
+      <div class="sheet-title">招牌品項與價格</div>
+      <div class="sheet-sub">請填「哪道菜／哪個套餐」，價格是指這個品項本身，不是整間店的均價。</div>
+      <div class="field">
+        <label for="fDish">品項名稱</label>
+        <input id="fDish" type="text" maxlength="30" placeholder="例如：乾麵套餐" />
+      </div>
+      <div class="field">
+        <label for="fPrice">價格（新台幣）</label>
+        <input id="fPrice" type="number" min="1" max="200" placeholder="150" />
+        <div class="hint" id="priceHint">超過 200 就不是「俗擱大碗」囉，上限 200 元</div>
+      </div>
     </div>
 
-    <div class="field">
-      <label for="fNick">你的暱稱（選填）</label>
-      <input id="fNick" type="text" placeholder="省錢戰士" maxlength="12" />
+    <div class="wizard-step hidden" data-step="4">
+      <div class="sheet-title">這是哪種類型？</div>
+      <div class="sheet-sub">選一個最接近的分類。</div>
+      <div class="category-pick-list" id="categoryPickList"></div>
+    </div>
+
+    <div class="wizard-step hidden" data-step="5">
+      <div class="sheet-title">有符合的特色嗎？</div>
+      <div class="sheet-sub">可以複選，沒有符合的話可以直接跳過這步。</div>
+      <div class="tag-pick-list" id="tagPickList"></div>
+    </div>
+
+    <div class="wizard-step hidden" data-step="6">
+      <div class="sheet-title">給個評分吧</div>
+      <div class="field">
+        <label>評分</label>
+        <div class="star-picker" id="starPicker">
+          <span data-v="1">★</span><span data-v="2">★</span><span data-v="3">★</span><span data-v="4">★</span><span data-v="5">★</span>
+        </div>
+      </div>
+      <div class="field">
+        <label for="fComment">一句話推薦</label>
+        <textarea id="fComment" maxlength="60" placeholder="例如：便宜大碗，湯頭很夠味！"></textarea>
+      </div>
+    </div>
+
+    <div class="wizard-step hidden" data-step="7">
+      <div class="sheet-title">上傳菜單或收據照片</div>
+      <div class="sheet-sub">至少上傳 1 張作為佐證，最多可以上傳 3 張，也會用來之後審核店家認證。</div>
+      <div class="field">
+        <label for="fPhoto">照片（至少 1 張）</label>
+        <input id="fPhoto" type="file" accept="image/*" multiple />
+        <div class="hint">建議拍菜單、價目表或收據</div>
+        <div class="photo-preview-row" id="photoPreviewRow"></div>
+      </div>
+    </div>
+
+    <div class="wizard-step hidden" data-step="8">
+      <div class="sheet-title">還有什麼要補充的嗎？</div>
+      <div class="sheet-sub">沒有的話可以直接跳過。</div>
+      <div class="field">
+        <label for="fHours">營業時間（選填）</label>
+        <input id="fHours" type="text" maxlength="40" placeholder="例如：11:00-14:00, 17:00-20:00" />
+      </div>
+      <div class="field">
+        <label for="fNote">備註（選填）</label>
+        <textarea id="fNote" maxlength="200" placeholder="還有什麼想讓大家知道的？"></textarea>
+      </div>
+    </div>
+
+    <div class="wizard-step hidden" data-step="9">
+      <div class="sheet-title">確認一下內容</div>
+      <div class="sheet-sub">送出後大家就會看到這筆回報（除非被系統判斷需要人工審核）。</div>
+      <div id="wizardSummary" class="wizard-summary"></div>
     </div>
 
     <div class="sheet-actions">
-      <button class="btn-secondary" id="cancelAddBtn">取消</button>
-      <button class="btn-primary" id="submitAddBtn">蓋章送出</button>
+      <button class="btn-secondary" id="wizardPrevBtn">上一步</button>
+      <button class="btn-primary" id="wizardNextBtn">下一步</button>
+    </div>
+    <div style="text-align:center; margin-top:10px;">
+      <button type="button" id="cancelAddBtn" style="background:none; border:none; color:var(--charcoal); font-size:12.5px; text-decoration:underline; padding:4px;">取消回報</button>
     </div>
   </div>
 </div>
