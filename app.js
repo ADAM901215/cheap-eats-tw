@@ -26,9 +26,9 @@
   let currentUserId = null;
 
   function tierInfo(price){
-    if(price<=80) return {color:'#16A34A', label:'超佛心'};
-    if(price<=150) return {color:'#FFB020', label:'俗擱大碗'};
-    return {color:'#FF6B4A', label:'划算頂規'};
+    if(price<=80) return {color:'#5CA184', label:'超佛心'};
+    if(price<=150) return {color:'#E5AC55', label:'俗擱大碗'};
+    return {color:'#E8895F', label:'划算頂規'};
   }
 
   function starString(n){
