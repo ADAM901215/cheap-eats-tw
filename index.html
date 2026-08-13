@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>窮鬼地圖・200有找</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.css" />
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.Default.css" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<style>
+  :root{
+    --ink:#2B2E33;
+    --rice:#FFFFFF;
+    --rice-dim:#F7F7F5;
+    --mist:#AEC3D9;
+    --beige:#F0E6D6;
+    --sage:#B7C9B0;
+    --lantern:#FF8A50;
+    --lantern-dark:#E96F35;
+    --turmeric:#FFB020;
+    --jade:#3DBE8B;
+    --charcoal:#8A8F98;
+    --border:#ECEAE4;
+    --shadow: 0 4px 20px rgba(43,46,51,0.06);
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--rice-dim);
+    color:var(--ink);
+    font-family:'Noto Sans TC', sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  h1,h2,h3{font-family:'Noto Sans TC', sans-serif; margin:0;}
+  button{font-family:inherit; cursor:pointer;}
+  input,select{font-family:inherit;}
+  :focus-visible{outline:2px solid var(--lantern); outline-offset:2px;}
+
+  /* ---------- Map page full-screen layout ---------- */
+  #mapPage{
+    position:fixed; top:0; left:0; right:0; bottom:56px;
+    display:flex; flex-direction:column;
+    overflow:hidden;
+  }
+  #mapPage.hidden{ display:none !important; }
+
+  /* ---------- Header ---------- */
+  .app-header{
+    flex-shrink:0; z-index:40;
+    background:var(--rice);
+    color:var(--ink);
+    padding:14px 16px 12px;
+    border-bottom:1px solid var(--border);
+  }
+  .brand-row{display:flex; align-items:baseline; gap:10px; flex-wrap:wrap;}
+  .brand-title{font-size:20px; font-weight:900; letter-spacing:0.2px;}
+  .brand-badge{
+    font-family:'Noto Sans TC', sans-serif;
+    font-size:12px; font-weight:700;
+    color:#fff;
+    background:var(--lantern);
+    border-radius:20px;
+    padding:3px 10px;
+    display:inline-block;
+  }
+  .brand-sub{font-size:12.5px; color:var(--charcoal); margin-top:2px;}
+  .search-row{display:flex; gap:8px; margin-top:12px;}
+  .search-input{
+    flex:1; padding:10px 12px; border-radius:10px; border:1.5px solid var(--border);
+    background:var(--rice-dim); color:var(--ink); font-size:14.5px;
+  }
+  .search-input::placeholder{color:#9AA0AC;}
+  .locate-icon-btn{
+    background:var(--ink); border:none; border-radius:10px;
+    width:42px; height:42px; font-size:16px; color:#fff; flex-shrink:0;
+  }
+
+  /* ---------- Filter chips ---------- */
+  .filter-bar{
+    flex-shrink:0; z-index:35;
+    background:var(--rice-dim);
+    padding:10px 16px 8px;
+    border-bottom:1px solid var(--border);
+  }
+  .chip-row{display:flex; gap:8px; overflow-x:auto; padding-bottom:4px; scrollbar-width:none;}
+  .chip-row::-webkit-scrollbar{display:none;}
+  .chip{
+    flex-shrink:0; padding:7px 13px; border-radius:20px; border:1.5px solid var(--border);
+    background:var(--rice); font-size:13.5px; font-weight:500; color:var(--charcoal);
+    white-space:nowrap;
+  }
+  .chip.active{background:var(--ink); border-color:var(--ink); color:#fff;}
+  .sort-row{display:flex; align-items:center; gap:8px; margin-top:8px; font-size:13px;}
+  .sort-row select{
+    padding:6px 8px; border-radius:8px; border:1.5px solid var(--border); background:var(--rice);
+  }
+  .price-note{margin-left:auto; font-family:'JetBrains Mono', monospace; font-size:12px; color:var(--lantern-dark); font-weight:700;}
+
+  /* ---------- Map ---------- */
+  #map{ flex:1; min-height:0; width:100%; background:#EDEEF1; position:relative; z-index:1; }
+  .leaflet-popup-content-wrapper{ border-radius:18px; font-family:'Noto Sans TC', sans-serif; box-shadow:0 10px 30px rgba(43,46,51,0.18); }
+  .price-pill{
+    display:flex; align-items:center; justify-content:center;
+    height:28px; padding:0 12px; border-radius:14px;
+    background:#fff; font-family:'JetBrains Mono', monospace; font-weight:800; font-size:13px;
+    box-shadow:var(--shadow); border:2.5px solid;
+    white-space:nowrap;
+  }
+  .my-location-dot{
+    width:18px; height:18px; border-radius:50%;
+    background:#4285F4; border:3px solid #fff; box-shadow:0 0 0 1px rgba(0,0,0,0.15), 0 2px 6px rgba(0,0,0,0.25);
+  }
+  .cluster-badge{
+    display:flex; align-items:center; justify-content:center;
+    width:100%; height:100%; border-radius:50%;
+    background:var(--ink); color:#fff; font-family:'JetBrains Mono', monospace; font-weight:700;
+    box-shadow:var(--shadow); border:2.5px solid #fff;
+  }
+
+  /* ---------- List ---------- */
+  .list-wrap{ padding:16px; max-width:640px; margin:0 auto; }
+  .list-heading{
+    display:flex; align-items:baseline; justify-content:space-between; margin-bottom:12px;
+  }
+  .list-heading h2{font-size:16px; font-weight:700;}
+  .list-count{font-family:'JetBrains Mono', monospace; font-size:13px; color:var(--charcoal);}
+
+  /* ---------- List bottom sheet (Uber Eats 風格：地圖上滑出的餐廳清單) ---------- */
+  .list-sheet{
+    position:absolute; left:0; right:0; bottom:0; z-index:30;
+    background:var(--rice);
+    border-radius:24px 24px 0 0;
+    box-shadow:0 -6px 24px rgba(20,22,30,0.14);
+    display:flex; flex-direction:column;
+    max-height:72vh;
+    transform: translateY(0);
+    transition: transform .28s ease;
+  }
+  .list-sheet.collapsed{ transform: translateY(calc(100% - 60px)); }
+  .sheet-handle-bar{
+    flex-shrink:0; padding:9px 16px 12px; cursor:pointer;
+    display:flex; flex-direction:column; align-items:center; gap:7px;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .handle-grip{ width:36px; height:4px; border-radius:3px; background:var(--border); }
+  .sheet-handle-row{ display:flex; align-items:center; justify-content:space-between; width:100%; gap:8px; }
+  .sheet-handle-title{ font-size:15px; font-weight:800; display:flex; align-items:center; gap:6px; }
+  .sheet-handle-arrow{ font-size:12px; color:var(--charcoal); transition:transform .28s ease; }
+  .list-sheet.collapsed .sheet-handle-arrow{ transform:rotate(180deg); }
+  .list-sheet-body{ overflow-y:auto; -webkit-overflow-scrolling:touch; padding:0 16px 16px; }
+
+  .ticket-card{
+    background:var(--rice); border-radius:20px;
+    box-shadow:var(--shadow); margin-bottom:14px;
+    padding:16px;
+    border:1px solid var(--border);
+    animation: rise .3s ease both;
+  }
+  @keyframes rise{ from{opacity:0; transform:translateY(8px);} to{opacity:1; transform:translateY(0);} }
+  .ticket-head{display:flex; align-items:flex-start; gap:10px;}
+  .cat-emoji{
+    font-size:18px; line-height:1; width:36px; height:36px; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center;
+    background:var(--rice-dim); border-radius:10px;
+  }
+  .ticket-name-wrap{flex:1; min-width:0;}
+  .ticket-dish{font-size:16px; font-weight:700; line-height:1.3;}
+  .ticket-store{font-size:12.5px; color:var(--charcoal); margin-top:2px;}
+  .tier-tag{
+    font-size:11px; font-weight:700; padding:4px 9px; border-radius:20px; color:#fff; flex-shrink:0;
+    white-space:nowrap;
+  }
+  .verified-badge{
+    font-size:10.5px; font-weight:700; padding:2px 7px; border-radius:5px;
+    background:var(--jade); color:#fff; white-space:nowrap; margin-left:4px;
+  }
+  .ticket-comment{font-size:13px; color:var(--charcoal); margin:8px 0; line-height:1.5;}
+  .ticket-meta{display:flex; align-items:center; gap:10px; font-size:13px;}
+  .stars{color:var(--turmeric); letter-spacing:1px;}
+  .like-btn{
+    margin-left:auto; border:1.5px solid var(--border); background:var(--rice-dim); color:var(--jade);
+    border-radius:20px; padding:5px 12px; font-size:12.5px; font-weight:700;
+  }
+  .like-btn.liked{background:var(--jade); border-color:var(--jade); color:#fff;}
+  .photo-thumb{
+    margin-top:10px; border-radius:10px; max-width:100%; max-height:160px; display:block;
+    border:1px solid var(--border);
+  }
+  .perf-line{
+    border-top:1px solid var(--border); margin:12px 0 10px;
+  }
+  .ticket-bottom{display:flex; align-items:center; gap:10px;}
+  .price-label{font-size:11.5px; color:#9AA0AC;}
+  .price-value{font-family:'JetBrains Mono', monospace; font-weight:700; font-size:20px; color:var(--lantern-dark);}
+  .ticket-buttons{ margin-left:auto; display:flex; align-items:center; gap:8px; }
+  .locate-btn{
+    background:var(--ink); color:#fff; border:none; border-radius:10px;
+    padding:8px 12px; font-size:12.5px; font-weight:500;
+  }
+  .delete-btn{
+    background:#fff; color:var(--lantern-dark); border:1.5px solid var(--lantern-dark);
+    border-radius:10px; padding:8px 12px; font-size:12.5px; font-weight:500;
+  }
+  .delete-btn:active{ background:var(--lantern-dark); color:#fff; }
+  .nickname-tag{font-size:12px; color:#9AA0AC; margin-top:8px; font-weight:500;}
+
+  .empty-state{
+    text-align:center; padding:40px 20px; color:var(--charcoal);
+  }
+  .empty-state .stamp{font-size:40px; display:block; margin-bottom:10px;}
+
+  /* ---------- FAB ---------- */
+  .fab{
+    position:fixed; right:18px; bottom:132px; z-index:50;
+    width:56px; height:56px; border-radius:50%; border:none;
+    background:var(--lantern); color:#fff; font-size:26px; box-shadow:0 6px 18px rgba(255,107,74,0.4);
+    display:flex; align-items:center; justify-content:center;
+  }
+  .fab:active{transform:scale(0.94);}
+  .fab.hidden{display:none !important;}
+
+  /* ---------- Bottom nav ---------- */
+  body{ padding-bottom:56px; }
+  .page.hidden{ display:none !important; }
+  .bottom-nav{
+    position:fixed; left:0; right:0; bottom:0; z-index:55;
+    background:var(--rice); display:flex; border-top:1px solid var(--border);
+  }
+  .nav-item{
+    flex:1; background:none; border:none; color:#9AA0AC; padding:8px 4px 10px;
+    font-size:11px; display:flex; flex-direction:column; align-items:center; gap:2px;
+  }
+  .nav-item span{ font-size:19px; }
+  .nav-item.active{ color:var(--lantern); }
+
+  /* ---------- Settings ---------- */
+  .settings-card{
+    background:var(--rice); border-radius:14px; box-shadow:var(--shadow); border:1px solid var(--border);
+    padding:14px 16px; margin-bottom:12px;
+  }
+  .settings-row{ display:flex; align-items:center; gap:12px; justify-content:space-between; }
+  .settings-label{ font-size:14px; font-weight:700; margin-bottom:3px; }
+  .settings-value{ font-size:12.5px; color:var(--charcoal); }
+  .toggle-switch{ position:relative; display:inline-block; width:44px; height:26px; flex-shrink:0; }
+  .toggle-switch input{ opacity:0; width:0; height:0; }
+  .toggle-slider{
+    position:absolute; cursor:pointer; inset:0; background:var(--border); border-radius:26px; transition:.2s;
+  }
+  .toggle-slider::before{
+    content:""; position:absolute; height:20px; width:20px; left:3px; bottom:3px;
+    background:#fff; border-radius:50%; transition:.2s; box-shadow:0 1px 3px rgba(0,0,0,0.2);
+  }
+  .toggle-switch input:checked + .toggle-slider{ background:var(--jade); }
+  .toggle-switch input:checked + .toggle-slider::before{ transform:translateX(18px); }
+
+  /* ---------- Dashboard（個人任務／積分）---------- */
+  .points-hero{
+    background: linear-gradient(135deg, var(--mist), var(--sage));
+    border-radius:22px; padding:20px; margin-bottom:14px; color:var(--ink);
+    box-shadow:var(--shadow);
+  }
+  .points-hero-label{ font-size:12.5px; font-weight:700; opacity:0.75; }
+  .points-hero-value{ font-family:'JetBrains Mono', monospace; font-size:34px; font-weight:800; margin:4px 0 12px; }
+  .points-hero-row{ display:flex; align-items:center; justify-content:space-between; gap:10px; }
+  .checkin-btn{
+    background:var(--lantern); color:#fff; border:none; border-radius:20px;
+    padding:10px 18px; font-size:13.5px; font-weight:700; flex-shrink:0;
+    box-shadow:0 4px 14px rgba(255,138,80,0.4);
+  }
+  .checkin-btn:disabled{ background:rgba(43,46,51,0.18); color:var(--ink); box-shadow:none; opacity:0.7; }
+  .checkin-streak{ font-size:12.5px; opacity:0.85; }
+  .task-card{
+    background:var(--rice); border-radius:20px; box-shadow:var(--shadow); border:1px solid var(--border);
+    padding:14px 16px; margin-bottom:12px;
+  }
+  .task-title{ font-size:14.5px; font-weight:700; margin-bottom:10px; display:flex; align-items:center; gap:6px; }
+  .task-row{ display:flex; align-items:center; justify-content:space-between; padding:8px 0; }
+  .task-row + .task-row{ border-top:1px solid var(--border); }
+  .task-name{ font-size:13.5px; }
+  .task-desc{ font-size:11.5px; color:var(--charcoal); margin-top:2px; }
+  .task-reward{ font-family:'JetBrains Mono', monospace; font-weight:800; font-size:13px; color:var(--lantern-dark); flex-shrink:0; }
+  .progress-track{ background:var(--rice-dim); border-radius:20px; height:10px; overflow:hidden; margin-top:8px; }
+  .progress-fill{ background:var(--jade); height:100%; border-radius:20px; transition:width .3s ease; }
+  .shop-entry-btn{
+    width:100%; background:var(--ink); color:#fff; border:none; border-radius:20px;
+    padding:13px; font-size:14.5px; font-weight:700; margin-top:4px;
+  }
+
+  /* ---------- Rewards shop ---------- */
+  .reward-grid{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .reward-card{
+    background:var(--rice); border-radius:20px; box-shadow:var(--shadow); border:1px solid var(--border);
+    padding:14px; text-align:center;
+  }
+  .reward-emoji{ font-size:34px; margin-bottom:8px; }
+  .reward-name{ font-size:13.5px; font-weight:700; margin-bottom:4px; }
+  .reward-cost{ font-family:'JetBrains Mono', monospace; font-weight:800; color:var(--lantern-dark); font-size:14px; margin-bottom:10px; }
+  .redeem-btn{
+    width:100%; background:var(--sage); color:var(--ink); border:none; border-radius:16px;
+    padding:9px; font-size:12.5px; font-weight:700;
+  }
+  .redeem-btn:disabled{ background:var(--rice-dim); color:#B7BBC2; }
+  .shop-note{ font-size:11.5px; color:var(--charcoal); text-align:center; margin:14px 0 4px; line-height:1.6; }
+
+  /* ---------- Board ---------- */
+  .board-post-card{
+    background:var(--rice); border-radius:14px; box-shadow:var(--shadow); border:1px solid var(--border);
+    padding:14px 16px; margin-bottom:12px; cursor:pointer;
+  }
+  .board-post-title{ font-size:15px; font-weight:700; margin-bottom:4px; }
+  .board-post-preview{ font-size:13px; color:var(--charcoal); margin-bottom:8px; line-height:1.5; }
+  .board-post-meta{ font-size:12px; color:#9AA0AC; display:flex; gap:10px; align-items:center; }
+  .board-detail-title{ font-size:18px; font-weight:900; margin-bottom:6px; }
+  .board-detail-meta{ font-size:12.5px; color:#9AA0AC; margin-bottom:14px; }
+  .board-detail-content{ font-size:14px; line-height:1.7; white-space:pre-wrap; margin-bottom:16px; }
+  .board-detail-actions{ display:flex; gap:10px; align-items:center; margin-bottom:18px; }
+  .comment-item{ padding:10px 0; border-top:1px solid var(--border); font-size:13px; }
+  .comment-meta{ font-size:11.5px; color:#9AA0AC; margin-bottom:3px; }
+  .comment-input-row{ display:flex; gap:8px; margin-top:14px; }
+  .comment-input-row textarea{ flex:1; height:44px; }
+
+  /* ---------- Modal ---------- */
+  .overlay{
+    position:fixed; inset:0; background:rgba(20,22,30,0.5); z-index:60;
+    display:flex; align-items:flex-end; justify-content:center;
+  }
+  .hidden{display:none !important;}
+  .sheet{
+    background:var(--rice); width:100%; max-width:520px; border-radius:20px 20px 0 0;
+    max-height:88vh; overflow-y:auto; padding:20px 20px 26px;
+    animation: sheetUp .25s ease both;
+  }
+  @keyframes sheetUp{ from{transform:translateY(24px); opacity:0;} to{transform:translateY(0); opacity:1;} }
+  .sheet-title{font-size:17px; font-weight:900; margin-bottom:2px;}
+  .sheet-sub{font-size:12.5px; color:var(--charcoal); margin-bottom:16px;}
+  .field{margin-bottom:14px;}
+  .field label{display:block; font-size:13px; font-weight:700; margin-bottom:5px;}
+  .field input, .field textarea, .field select{
+    width:100%; padding:10px 11px; border-radius:10px; border:1.5px solid var(--border); background:var(--rice-dim);
+    font-size:14px;
+  }
+  .field textarea{resize:none; height:56px;}
+  .hint{font-size:11.5px; color:#9AA0AC; margin-top:4px;}
+  .hint.err{color:var(--lantern-dark); font-weight:700;}
+  .star-picker{display:flex; gap:6px; font-size:26px;}
+  .star-picker span{cursor:pointer; color:var(--border);}
+  .star-picker span.on{color:var(--turmeric);}
+  #pickMap{ height:180px; border-radius:12px; margin-top:6px; border:1.5px solid var(--border); background:#EDEEF1; position:relative; z-index:1; }
+  .address-results{
+    margin-top:6px; border:1.5px solid var(--border); border-radius:10px; overflow:hidden; background:#fff;
+    max-height:220px; overflow-y:auto;
+  }
+  .addr-result-item{ padding:10px 12px; font-size:13px; border-bottom:1px solid var(--border); cursor:pointer; }
+  .addr-result-item:last-child{ border-bottom:none; }
+  .addr-result-item:hover, .addr-result-item:active{ background:var(--rice-dim); }
+  .addr-result-empty{ padding:10px 12px; font-size:13px; color:var(--charcoal); }
+  .sheet-actions{display:flex; gap:10px; margin-top:18px;}
+  .btn-secondary, .btn-primary{
+    flex:1; padding:12px; border-radius:12px; border:none; font-size:14.5px; font-weight:700;
+  }
+  .btn-secondary{background:var(--rice-dim); color:var(--charcoal); border:1.5px solid var(--border);}
+  .btn-primary{background:var(--ink); color:#fff;}
+  .btn-primary:disabled{opacity:0.6;}
+  .btn-primary:active{transform:scale(0.98);}
+
+  .toast{
+    position:fixed; left:50%; bottom:96px; transform:translateX(-50%);
+    background:var(--ink); color:#fff; padding:10px 18px; border-radius:20px; font-size:13.5px;
+    font-weight:700; z-index:80; box-shadow:0 6px 20px rgba(20,22,30,0.3);
+    animation: toastIn .25s ease both;
+    max-width:88vw; text-align:center;
+  }
+  .toast.error{ background:var(--lantern-dark); }
+  @keyframes toastIn{ from{opacity:0; transform:translateX(-50%) translateY(8px);} to{opacity:1; transform:translateX(-50%) translateY(0);} }
+
+  .loading{ text-align:center; padding:40px; color:var(--charcoal); font-size:13.5px; }
+
+  @media (prefers-reduced-motion: reduce){
+    *{animation:none !important; transition:none !important;}
+  }
+</style>
+</head>
+<body>
+
+<div id="mapPage" class="page">
+<header class="app-header">
+  <div class="brand-row">
+    <h1 class="brand-title">窮鬼地圖</h1>
+    <span class="brand-badge">200有找</span>
+  </div>
+  <div class="brand-sub">全民揪團回報的高CP值品項・一餐不超過 200 元</div>
+  <div class="search-row">
+    <input id="searchInput" class="search-input" type="text" placeholder="搜尋店名、品項關鍵字…" />
+    <button id="locateBtn" class="locate-icon-btn" aria-label="定位我的位置">📍</button>
+  </div>
+</header>
+
+<div class="filter-bar">
+  <div class="chip-row" id="chipRow"></div>
+  <div class="sort-row">
+    <label for="sortSelect" style="color:var(--charcoal);">排序</label>
+    <select id="sortSelect">
+      <option value="rating">評分最高</option>
+      <option value="priceAsc">價格最低</option>
+      <option value="likes">最多人推</option>
+      <option value="newest">最新回報</option>
+    </select>
+    <span class="price-note">全站上限 $200</span>
+  </div>
+</div>
+
+<div id="map"></div>
+
+<div class="list-sheet collapsed" id="listSheet">
+  <div class="sheet-handle-bar" id="listSheetHandle">
+    <div class="handle-grip"></div>
+    <div class="sheet-handle-row">
+      <span class="sheet-handle-title">📋 附近餐廳列表 <span class="sheet-handle-arrow">▲</span></span>
+      <span class="list-count" id="listCount">0 筆</span>
+    </div>
+  </div>
+  <div class="list-sheet-body">
+    <div id="listContainer"><div class="loading">正在讀取大家回報的口袋名單…</div></div>
+  </div>
+</div>
+</div>
+
+<div id="boardPage" class="page hidden">
+  <header class="app-header">
+    <div class="brand-row">
+      <h1 class="brand-title">討論區</h1>
+    </div>
+    <div class="brand-sub">窮鬼們互相交流，發文、留言、按讚</div>
+  </header>
+  <div class="list-wrap">
+    <div id="boardContainer"><div class="loading">正在讀取討論區文章…</div></div>
+  </div>
+</div>
+
+<div id="dashboardPage" class="page hidden">
+  <header class="app-header">
+    <div class="brand-row">
+      <h1 class="brand-title">我的省錢成就</h1>
+    </div>
+    <div class="brand-sub">簽到、回報、挑戰任務，累積積分兌換好康</div>
+  </header>
+  <div class="list-wrap">
+    <div class="points-hero">
+      <div class="points-hero-label">目前積分</div>
+      <div class="points-hero-value" id="pointsValue">0 pt</div>
+      <div class="points-hero-row">
+        <span class="checkin-streak" id="checkinStreakText">尚未簽到</span>
+        <button class="checkin-btn" id="checkinBtn">✅ 今日簽到 +10</button>
+      </div>
+    </div>
+
+    <div class="task-card">
+      <div class="task-title">📋 任務</div>
+      <div class="task-row">
+        <div>
+          <div class="task-name">推薦一家新餐廳</div>
+          <div class="task-desc">回報一筆 200 元有找的品項</div>
+        </div>
+        <div class="task-reward">+30 pt</div>
+      </div>
+      <div class="task-row">
+        <div>
+          <div class="task-name">上傳菜單／收據照片</div>
+          <div class="task-desc">回報時附上照片證明</div>
+        </div>
+        <div class="task-reward">+20 pt</div>
+      </div>
+    </div>
+
+    <div class="task-card">
+      <div class="task-title">🏆 地圖任務：標註 5 家新餐廳</div>
+      <div class="task-desc" id="mapTaskDesc">已回報 0 / 5 家</div>
+      <div class="progress-track"><div class="progress-fill" id="mapTaskProgress" style="width:0%;"></div></div>
+    </div>
+
+    <div class="task-card">
+      <div class="task-title">💰 省錢挑戰：累積 7 筆 $100 以下品項</div>
+      <div class="task-desc" id="cheapTaskDesc">已回報 0 / 7 筆</div>
+      <div class="progress-track"><div class="progress-fill" id="cheapTaskProgress" style="width:0%;"></div></div>
+    </div>
+
+    <button class="shop-entry-btn" id="openRewardsBtn">🎁 前往積分兌換商店</button>
+  </div>
+</div>
+
+<div id="settingsPage" class="page hidden">
+  <header class="app-header">
+    <div class="brand-row">
+      <h1 class="brand-title">設定</h1>
+    </div>
+    <div class="brand-sub">帳號、通知、語言</div>
+  </header>
+  <div class="list-wrap">
+    <div class="settings-card">
+      <div class="settings-row">
+        <div>
+          <div class="settings-label">登入狀態</div>
+          <div class="settings-value" id="loginStatusText">尚未登入（匿名瀏覽中）</div>
+        </div>
+        <button class="btn-secondary" id="loginActionBtn" style="flex:0 0 auto; padding:9px 16px;">登入</button>
+      </div>
+    </div>
+    <div class="settings-card">
+      <div class="settings-row">
+        <div>
+          <div class="settings-label">通知</div>
+          <div class="settings-value">開啟後，之後有新功能會在網站內提醒你（目前僅為畫面偏好，網頁版無法主動推播到手機）</div>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" id="notifyToggle" />
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+    </div>
+    <div class="settings-card">
+      <div class="settings-row">
+        <div>
+          <div class="settings-label">語言</div>
+          <div class="settings-value">目前僅支援中文，英文版尚未提供</div>
+        </div>
+        <select id="langSelect" style="padding:8px; border-radius:8px; border:1.5px solid #d8cca8;">
+          <option value="zh-TW">中文</option>
+          <option value="en" disabled>English（即將推出）</option>
+        </select>
+      </div>
+    </div>
+  </div>
+</div>
+
+<nav class="bottom-nav">
+  <button class="nav-item active" data-page="mapPage"><span>📍</span>地圖</button>
+  <button class="nav-item" data-page="boardPage"><span>💬</span>討論區</button>
+  <button class="nav-item" data-page="dashboardPage"><span>🎯</span>任務</button>
+  <button class="nav-item" data-page="settingsPage"><span>⚙️</span>設定</button>
+</nav>
+
+<button class="fab" id="openAddBtn" aria-label="新增品項">＋</button>
+
+<div class="overlay hidden" id="loginOverlay">
+  <div class="sheet">
+    <div class="sheet-title">登入窮鬼地圖</div>
+    <div class="sheet-sub">輸入 Email，我們會寄一封信給你，點信裡的連結就能登入，不用設密碼。登入後你的回報、發文紀錄可以跨裝置保留。</div>
+    <div class="field">
+      <label for="loginEmail">Email</label>
+      <input id="loginEmail" type="email" placeholder="you@example.com" />
+    </div>
+    <div class="sheet-actions">
+      <button class="btn-secondary" id="cancelLoginBtn">取消</button>
+      <button class="btn-primary" id="sendLoginLinkBtn">寄送登入連結</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay hidden" id="postOverlay">
+  <div class="sheet">
+    <div class="sheet-title">發表新文章</div>
+    <div class="sheet-sub">請理性發言，禁止人身攻擊或廣告內容。</div>
+    <div class="field">
+      <label for="fPostTitle">標題</label>
+      <input id="fPostTitle" type="text" maxlength="50" placeholder="例如：這週發現的隱藏版平價店家" />
+    </div>
+    <div class="field">
+      <label for="fPostContent">內容</label>
+      <textarea id="fPostContent" maxlength="1000" style="height:120px;" placeholder="想跟大家分享什麼？"></textarea>
+    </div>
+    <div class="field">
+      <label for="fPostNick">你的暱稱（選填）</label>
+      <input id="fPostNick" type="text" placeholder="省錢戰士" maxlength="12" />
+    </div>
+    <div class="sheet-actions">
+      <button class="btn-secondary" id="cancelPostBtn">取消</button>
+      <button class="btn-primary" id="submitPostBtn">發布</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay hidden" id="postDetailOverlay">
+  <div class="sheet" id="postDetailSheet"></div>
+</div>
+
+<div class="overlay hidden" id="rewardsOverlay">
+  <div class="sheet">
+    <div class="sheet-title">🎁 積分兌換商店</div>
+    <div class="sheet-sub">目前積分：<strong id="rewardsPointsText">0 pt</strong></div>
+    <div class="reward-grid" id="rewardGrid"></div>
+    <div class="shop-note">兌換成功後請截圖畫面，目前為測試階段，實際到店兌換方式將由店家合作後另行公告。</div>
+    <div class="sheet-actions">
+      <button class="btn-secondary" id="closeRewardsBtn" style="flex:1;">關閉</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay hidden" id="overlay">
+  <div class="sheet">
+    <div class="sheet-title">回報一道 200 有找的品項</div>
+    <div class="sheet-sub">請填「哪間店的哪道菜／哪個套餐」，大家會看到你回報的資料，請盡量填寫真實資訊唷。</div>
+
+    <div class="field">
+      <label for="fStore">店名</label>
+      <input id="fStore" type="text" placeholder="例如：巷口無名滷肉飯" maxlength="30" />
+    </div>
+
+    <div class="field">
+      <label for="fDish">招牌品項名稱</label>
+      <input id="fDish" type="text" placeholder="例如：乾麵套餐" maxlength="30" />
+      <div class="hint">價格是指「這個品項」，不是整間店的均價</div>
+    </div>
+
+    <div class="field">
+      <label for="fCategory">分類</label>
+      <select id="fCategory">
+        <option value="早餐">🥯 早餐</option>
+        <option value="正餐">🍚 正餐</option>
+        <option value="小吃">🍢 小吃</option>
+        <option value="飲料">🥤 飲料</option>
+        <option value="宵夜">🌙 宵夜</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label for="fPrice">這個品項的價格（新台幣）</label>
+      <input id="fPrice" type="number" min="1" max="200" placeholder="150" />
+      <div class="hint" id="priceHint">超過 200 就不是「俗擱大碗」囉，上限 200 元</div>
+    </div>
+
+    <div class="field">
+      <label>評分</label>
+      <div class="star-picker" id="starPicker">
+        <span data-v="1">★</span><span data-v="2">★</span><span data-v="3">★</span><span data-v="4">★</span><span data-v="5">★</span>
+      </div>
+    </div>
+
+    <div class="field">
+      <label for="fComment">一句話推薦</label>
+      <textarea id="fComment" maxlength="60" placeholder="例如：便宜大碗，湯頭很夠味！"></textarea>
+    </div>
+
+    <div class="field">
+      <label for="fPhoto">上傳菜單／收據照片（選填）</label>
+      <input id="fPhoto" type="file" accept="image/*" />
+      <div class="hint">作為佐證，未來也會用來審核店家認證</div>
+    </div>
+
+    <div class="field">
+      <label for="fAddressSearch">搜尋店名／地址自動定位（選填）</label>
+      <div style="display:flex; gap:8px;">
+        <input id="fAddressSearch" type="text" placeholder="輸入地址、路名或店名關鍵字" />
+        <button type="button" id="searchAddressBtn" class="btn-secondary" style="flex:0 0 auto; padding:0 16px;">搜尋</button>
+      </div>
+      <div id="addressResults" class="hidden address-results"></div>
+    </div>
+
+    <div class="field">
+      <label>店家位置（點地圖放置圖釘）</label>
+      <div id="pickMap"></div>
+      <div class="hint">搜尋後點選正確地點，圖釘會自動移過去；也可以直接在地圖上點擊微調位置</div>
+    </div>
+
+    <div class="field">
+      <label for="fNick">你的暱稱（選填）</label>
+      <input id="fNick" type="text" placeholder="省錢戰士" maxlength="12" />
+    </div>
+
+    <div class="sheet-actions">
+      <button class="btn-secondary" id="cancelAddBtn">取消</button>
+      <button class="btn-primary" id="submitAddBtn">蓋章送出</button>
+    </div>
+  </div>
+</div>
+
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
